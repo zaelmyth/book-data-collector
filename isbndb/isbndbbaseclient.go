@@ -1,58 +1,68 @@
 package isbndb
 
 import (
+	"bytes"
 	"encoding/json"
+	_ "github.com/joho/godotenv/autoload"
 	"io"
 	"log"
 	"net/http"
+	"net/url"
 	"os"
 	"slices"
+	"strings"
 	"time"
-
-	_ "github.com/joho/godotenv/autoload"
 )
 
-const API_TIMEOUT = 30
-const API_URL_BASIC = "https://api2.isbndb.com"
-const API_URL_PREMIUM = "https://api.premium.isbndb.com"
-const API_URL_PRO = "https://api.pro.isbndb.com"
+const apiTimeout = 30
+const apiUrlBasic = "https://api2.isbndb.com"
+const apiUrlPremium = "https://api.premium.isbndb.com"
+const apiUrlPro = "https://api.pro.isbndb.com"
 
-func call(url string) []byte {
-	httpClient := http.Client{
-		Timeout: API_TIMEOUT * time.Second,
+func call(method string, url string, query url.Values) []byte {
+	requestMethod := http.MethodGet
+	apiUrl := getApiUrl()
+
+	var request *http.Request
+	var err error
+
+	if method == "post" {
+		requestMethod = http.MethodPost
+		bodyBuffer := getBodyBuffer(query)
+		request, err = http.NewRequest(requestMethod, apiUrl+url, bodyBuffer)
+	} else {
+		request, err = http.NewRequest(requestMethod, apiUrl+url, nil)
 	}
 
-	validSubscriptionTypes := []string{"basic", "premium", "pro"}
-	subscriptionType := os.Getenv("ISBNDB_SUBSCRIPTION_TYPE")
-	if !slices.Contains(validSubscriptionTypes, subscriptionType) {
-		log.Fatal("Unknown subscription type")
-	}
-
-	apiUrl := API_URL_BASIC
-	if subscriptionType == "premium" {
-		apiUrl = API_URL_PREMIUM
-	}
-	if subscriptionType == "pro" {
-		apiUrl = API_URL_PRO
-	}
-
-	request, error := http.NewRequest(http.MethodGet, apiUrl+url, nil)
-	if error != nil {
-		log.Fatal(error)
+	if err != nil {
+		log.Fatal(err)
 	}
 
 	request.Header.Add("Authorization", os.Getenv("ISBNDB_API_KEY"))
 	request.Header.Add("Accept", "application/json")
+	request.Header.Add("Content-Type", "application/json")
 
-	response, error := httpClient.Do(request)
-	if error != nil {
-		log.Fatal(error)
+	if requestMethod == http.MethodGet {
+		request.URL.RawQuery = query.Encode()
 	}
-	defer response.Body.Close()
 
-	body, error := io.ReadAll(response.Body)
-	if error != nil {
-		log.Fatal(error)
+	httpClient := http.Client{
+		Timeout: apiTimeout * time.Second,
+	}
+	response, err := httpClient.Do(request)
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer func(Body io.ReadCloser) {
+		err := Body.Close()
+		if err != nil {
+			log.Fatal(err)
+		}
+	}(response.Body)
+
+	body, err := io.ReadAll(response.Body)
+	if err != nil {
+		log.Fatal(err)
 	}
 
 	return body
@@ -65,4 +75,34 @@ func toStruct[T interface{}](response []byte, responseStruct T) T {
 	}
 
 	return responseStruct
+}
+
+func getBodyBuffer(query url.Values) *bytes.Buffer {
+	var bodyString []string
+	for key, values := range query {
+		bodyString = append(bodyString, key+"="+strings.Join(values, ","))
+	}
+
+	body := []byte(strings.Join(bodyString, "&"))
+
+	return bytes.NewBuffer(body)
+}
+
+func getApiUrl() string {
+	validSubscriptionTypes := []string{"basic", "premium", "pro"}
+	subscriptionType := os.Getenv("ISBNDB_SUBSCRIPTION_TYPE")
+
+	if !slices.Contains(validSubscriptionTypes, subscriptionType) {
+		log.Fatal("Unknown subscription type")
+	}
+
+	if subscriptionType == "basic" {
+		return apiUrlBasic
+	}
+
+	if subscriptionType == "premium" {
+		return apiUrlPremium
+	}
+
+	return apiUrlPro
 }
