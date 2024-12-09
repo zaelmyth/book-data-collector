@@ -57,6 +57,10 @@ func BookDetails(isbn string, withPrices bool) Book {
 }
 
 func SearchBooksByIsbn(isbns []string) BookSearchResultsByIsbn {
+	if len(isbns) > isbndbMaxPageSize {
+		log.Fatal("Page size cannot be bigger than 1000")
+	}
+
 	response := call("post", "/books", url.Values{
 		"isbns": isbns,
 	})
