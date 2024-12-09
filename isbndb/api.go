@@ -3,7 +3,6 @@ package isbndb
 import (
 	"bytes"
 	"encoding/json"
-	_ "github.com/joho/godotenv/autoload"
 	"io"
 	"log"
 	"net/http"

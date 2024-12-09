@@ -2,6 +2,8 @@ package main
 
 import (
 	"fmt"
+
+	_ "github.com/joho/godotenv/autoload"
 	"github.com/zaelmyth/book-data-collector/isbndb"
 )
 
