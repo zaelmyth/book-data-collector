@@ -14,12 +14,10 @@ func AuthorDetails(name string, page uint, pageSize uint) Author {
 		log.Fatal("Page size cannot be bigger than 1000")
 	}
 
-	response := call("get", "/author/"+name, url.Values{
+	return call("get", "/author/"+name, url.Values{
 		"page":     {fmt.Sprint(page)},
 		"pageSize": {fmt.Sprint(pageSize)},
-	})
-
-	return toStruct(response, Author{})
+	}, Author{})
 }
 
 func SearchAuthors(query string, page uint, pageSize uint) AuthorQueryResults {
@@ -27,12 +25,10 @@ func SearchAuthors(query string, page uint, pageSize uint) AuthorQueryResults {
 		log.Fatal("Page size cannot be bigger than 1000")
 	}
 
-	response := call("get", "/authors/"+query, url.Values{
+	return call("get", "/authors/"+query, url.Values{
 		"page":     {fmt.Sprint(page)},
 		"pageSize": {fmt.Sprint(pageSize)},
-	})
-
-	return toStruct(response, AuthorQueryResults{})
+	}, AuthorQueryResults{})
 }
 
 func BookDetails(isbn string, withPrices bool) Book {
@@ -45,15 +41,11 @@ func BookDetails(isbn string, withPrices bool) Book {
 		withPricesQuery = "1"
 	}
 
-	response := call("get", "/book/"+isbn, url.Values{
+	return call("get", "/book/"+isbn, url.Values{
 		"with_prices": {withPricesQuery},
-	})
-
-	toStruct := toStruct(response, struct {
+	}, struct {
 		Book Book
-	}{})
-
-	return toStruct.Book
+	}{}).Book
 }
 
 func SearchBooksByIsbn(isbns []string) BookSearchResultsByIsbn {
@@ -61,15 +53,11 @@ func SearchBooksByIsbn(isbns []string) BookSearchResultsByIsbn {
 		log.Fatal("Page size cannot be bigger than 1000")
 	}
 
-	response := call("post", "/books", url.Values{
+	return call("post", "/books", url.Values{
 		"isbns": isbns,
-	})
-
-	return toStruct(response, BookSearchResultsByIsbn{})
+	}, BookSearchResultsByIsbn{})
 }
 
 func GetStats() Stats {
-	response := call("get", "/stats", url.Values{})
-
-	return toStruct(response, Stats{})
+	return call("get", "/stats", url.Values{}, Stats{})
 }

@@ -18,11 +18,11 @@ const apiUrlBasic = "https://api2.isbndb.com"
 const apiUrlPremium = "https://api.premium.isbndb.com"
 const apiUrlPro = "https://api.pro.isbndb.com"
 
-func call(method string, url string, query url.Values) []byte {
+func call[T any](method string, url string, data url.Values, responseStruct T) T {
 	httpClient := http.Client{
 		Timeout: apiTimeout * time.Second,
 	}
-	request := createRequest(method, url, query)
+	request := createRequest(method, url, data)
 
 	response, err := httpClient.Do(request)
 	if err != nil {
@@ -40,11 +40,7 @@ func call(method string, url string, query url.Values) []byte {
 		log.Fatal(err)
 	}
 
-	return body
-}
-
-func toStruct[T interface{}](response []byte, responseStruct T) T {
-	jsonError := json.Unmarshal(response, &responseStruct)
+	jsonError := json.Unmarshal(body, &responseStruct)
 	if jsonError != nil {
 		log.Fatal(jsonError)
 	}
@@ -52,11 +48,11 @@ func toStruct[T interface{}](response []byte, responseStruct T) T {
 	return responseStruct
 }
 
-func createRequest(method string, url string, query url.Values) *http.Request {
+func createRequest(method string, url string, data url.Values) *http.Request {
 	apiUrl := getApiUrl()
 
 	if method == "post" {
-		bodyBuffer := getBodyBuffer(query)
+		bodyBuffer := getBodyBuffer(data)
 		request, err := http.NewRequest(http.MethodPost, apiUrl+url, bodyBuffer)
 		if err != nil {
 			log.Fatal(err)
@@ -77,7 +73,7 @@ func createRequest(method string, url string, query url.Values) *http.Request {
 	request.Header.Add("Authorization", os.Getenv("ISBNDB_API_KEY"))
 	request.Header.Add("Accept", "application/json")
 	request.Header.Add("Content-Type", "application/json")
-	request.URL.RawQuery = query.Encode()
+	request.URL.RawQuery = data.Encode()
 
 	return request
 }
@@ -101,9 +97,9 @@ func getApiUrl() string {
 	return apiUrlPro
 }
 
-func getBodyBuffer(query url.Values) *bytes.Buffer {
+func getBodyBuffer(data url.Values) *bytes.Buffer {
 	var bodyString []string
-	for key, values := range query {
+	for key, values := range data {
 		bodyString = append(bodyString, key+"="+strings.Join(values, ","))
 	}
 
