@@ -19,35 +19,11 @@ const apiUrlPremium = "https://api.premium.isbndb.com"
 const apiUrlPro = "https://api.pro.isbndb.com"
 
 func call(method string, url string, query url.Values) []byte {
-	requestMethod := http.MethodGet
-	apiUrl := getApiUrl()
-
-	var request *http.Request
-	var err error
-
-	if method == "post" {
-		requestMethod = http.MethodPost
-		bodyBuffer := getBodyBuffer(query)
-		request, err = http.NewRequest(requestMethod, apiUrl+url, bodyBuffer)
-	} else {
-		request, err = http.NewRequest(requestMethod, apiUrl+url, nil)
-	}
-
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	request.Header.Add("Authorization", os.Getenv("ISBNDB_API_KEY"))
-	request.Header.Add("Accept", "application/json")
-	request.Header.Add("Content-Type", "application/json")
-
-	if requestMethod == http.MethodGet {
-		request.URL.RawQuery = query.Encode()
-	}
-
 	httpClient := http.Client{
 		Timeout: apiTimeout * time.Second,
 	}
+	request := createRequest(method, url, query)
+
 	response, err := httpClient.Do(request)
 	if err != nil {
 		log.Fatal(err)
@@ -76,15 +52,34 @@ func toStruct[T interface{}](response []byte, responseStruct T) T {
 	return responseStruct
 }
 
-func getBodyBuffer(query url.Values) *bytes.Buffer {
-	var bodyString []string
-	for key, values := range query {
-		bodyString = append(bodyString, key+"="+strings.Join(values, ","))
+func createRequest(method string, url string, query url.Values) *http.Request {
+	apiUrl := getApiUrl()
+
+	if method == "post" {
+		bodyBuffer := getBodyBuffer(query)
+		request, err := http.NewRequest(http.MethodPost, apiUrl+url, bodyBuffer)
+		if err != nil {
+			log.Fatal(err)
+		}
+
+		request.Header.Add("Authorization", os.Getenv("ISBNDB_API_KEY"))
+		request.Header.Add("Accept", "application/json")
+		request.Header.Add("Content-Type", "application/json")
+
+		return request
 	}
 
-	body := []byte(strings.Join(bodyString, "&"))
+	request, err := http.NewRequest(http.MethodGet, apiUrl+url, nil)
+	if err != nil {
+		log.Fatal(err)
+	}
 
-	return bytes.NewBuffer(body)
+	request.Header.Add("Authorization", os.Getenv("ISBNDB_API_KEY"))
+	request.Header.Add("Accept", "application/json")
+	request.Header.Add("Content-Type", "application/json")
+	request.URL.RawQuery = query.Encode()
+
+	return request
 }
 
 func getApiUrl() string {
@@ -104,4 +99,15 @@ func getApiUrl() string {
 	}
 
 	return apiUrlPro
+}
+
+func getBodyBuffer(query url.Values) *bytes.Buffer {
+	var bodyString []string
+	for key, values := range query {
+		bodyString = append(bodyString, key+"="+strings.Join(values, ","))
+	}
+
+	body := []byte(strings.Join(bodyString, "&"))
+
+	return bytes.NewBuffer(body)
 }
