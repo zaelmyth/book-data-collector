@@ -54,22 +54,35 @@ type Book struct {
 	}
 }
 
-type BookSearchResultsByIsbn struct {
+type BookSearchByIsbnResults struct {
 	Total     int
 	Requested int
 	Data      []Book
 }
 
-type BookSearchResultsByQuery struct {
+type BookSearchByQueryResults struct {
 	Total int
 	Books []Book
 }
 
 type Publisher struct {
-	Name  string
-	Books []struct {
-		isbn string
-	}
+	Publisher string
+	Books     []Book
+}
+
+type PublisherQueryResults struct {
+	Total      int
+	Publishers []string
+}
+
+type SearchResultsNames struct {
+	Total int
+	Data  []string
+}
+
+type SearchResultsBooks struct {
+	Total int
+	Data  []Book
 }
 
 type Stats struct {
@@ -81,7 +94,12 @@ type Stats struct {
 
 type Subject struct {
 	Subject string
-	Parent  string
+	Books   []Book
+}
+
+type SubjectQueryResults struct {
+	Total    int
+	Subjects []string
 }
 
 /* Types used by the types above */
@@ -135,4 +153,31 @@ type Merchant struct {
 	Price    string
 	Total    string
 	Link     string
+}
+
+/* Request types */
+
+type BookSearchByQueryRequest struct {
+	Query          string
+	Page           int
+	PageSize       int
+	Column         string
+	Year           int
+	Edition        int
+	Language       string
+	ShouldMatchAll bool
+}
+
+// SearchRequest contains all parameters from the api documentation but from testing it looks like only index, page,
+// pageSize and text are used
+type SearchRequest struct {
+	Index     string
+	Page      int
+	PageSize  int
+	Isbn      string
+	Isbn13    string
+	Author    string
+	Text      string
+	Subject   string
+	Publisher string
 }
