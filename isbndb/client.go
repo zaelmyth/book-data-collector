@@ -8,7 +8,9 @@ import (
 	"strconv"
 )
 
-const isbndbMaxPageSize = 1000
+// the api documentation says that the max page size is 1000, but it actually is limited by the response size
+// 2000 results per page is safely within the limit
+const isbndbMaxPageSize = 2000
 const isbndbMaxReturnSize = 10000
 
 func AuthorDetails(name string, page int, pageSize int, language string) Author {
