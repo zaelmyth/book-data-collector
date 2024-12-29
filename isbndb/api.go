@@ -18,7 +18,13 @@ const apiUrlBasic = "https://api2.isbndb.com"
 const apiUrlPremium = "https://api.premium.isbndb.com"
 const apiUrlPro = "https://api.pro.isbndb.com"
 
-func call[T any](method string, url string, data url.Values, responseStruct T) T {
+type response interface {
+	Author | AuthorQueryResults | Book | BookSearchByIsbnResults | BookSearchByQueryResults | Publisher |
+		PublisherQueryResults | SearchResultsNames | SearchResultsBooks | Stats | Subject | SubjectQueryResults |
+		struct{ Book Book }
+}
+
+func call[T response](method string, url string, data url.Values, responseStruct T) T {
 	httpClient := http.Client{
 		Timeout: apiTimeout * time.Second,
 	}
