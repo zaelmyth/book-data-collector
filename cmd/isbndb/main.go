@@ -37,6 +37,12 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
+	defer func() {
+		err := os.Remove("progress-isbndb.sqlite")
+		if err != nil {
+			log.Fatal(err)
+		}
+	}()
 	defer func(db *sql.DB) {
 		err := db.Close()
 		if err != nil {
