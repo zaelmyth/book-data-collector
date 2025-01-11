@@ -41,6 +41,10 @@ func call[T response](method string, url string, data url.Values, responseStruct
 		}
 	}(response.Body)
 
+	if response.StatusCode != http.StatusOK {
+		log.Fatal(response.Status)
+	}
+
 	body, err := io.ReadAll(response.Body)
 	if err != nil {
 		log.Fatal(err)
@@ -57,6 +61,11 @@ func call[T response](method string, url string, data url.Values, responseStruct
 func createRequest(method string, url string, data url.Values) *http.Request {
 	apiUrl := getApiUrl()
 
+	isbndbApiKey := os.Getenv("ISBNDB_API_KEY")
+	if isbndbApiKey == "" {
+		log.Fatal("ISBNDB_API_KEY is not set")
+	}
+
 	if method == "post" {
 		bodyBuffer := getBodyBuffer(data)
 		request, err := http.NewRequest(http.MethodPost, apiUrl+url, bodyBuffer)
@@ -64,7 +73,7 @@ func createRequest(method string, url string, data url.Values) *http.Request {
 			log.Fatal(err)
 		}
 
-		request.Header.Add("Authorization", os.Getenv("ISBNDB_API_KEY"))
+		request.Header.Add("Authorization", isbndbApiKey)
 		request.Header.Add("Accept", "application/json")
 		request.Header.Add("Content-Type", "application/json")
 
@@ -76,7 +85,7 @@ func createRequest(method string, url string, data url.Values) *http.Request {
 		log.Fatal(err)
 	}
 
-	request.Header.Add("Authorization", os.Getenv("ISBNDB_API_KEY"))
+	request.Header.Add("Authorization", isbndbApiKey)
 	request.Header.Add("Accept", "application/json")
 	request.Header.Add("Content-Type", "application/json")
 	request.URL.RawQuery = data.Encode()
@@ -89,7 +98,7 @@ func getApiUrl() string {
 	subscriptionType := os.Getenv("ISBNDB_SUBSCRIPTION_TYPE")
 
 	if !slices.Contains(validSubscriptionTypes, subscriptionType) {
-		log.Fatal("Unknown subscription type")
+		log.Fatal("Not set or invalid ISBNDB_SUBSCRIPTION_TYPE")
 	}
 
 	if subscriptionType == "basic" {

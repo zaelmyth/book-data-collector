@@ -22,6 +22,8 @@ import (
 )
 
 func main() {
+	log.SetFlags(log.LstdFlags | log.Llongfile) //add code file name and line number to error messages
+
 	db, err := sql.Open("sqlite", "book-data-isbndb.sqlite?_pragma=journal_mode(WAL)&_pragma=busy_timeout(5000)")
 	if err != nil {
 		log.Fatal(err)
@@ -109,6 +111,10 @@ func saveBookData(ctx context.Context, db *sql.DB, progressDb *sql.DB) {
 
 func getWordsListBytes() []byte {
 	wordsListUrl := os.Getenv("WORDS_LIST_URL")
+	if wordsListUrl == "" {
+		log.Fatal("WORDS_LIST_URL is not set")
+	}
+
 	response, err := http.Get(wordsListUrl)
 	if err != nil {
 		log.Fatal(err)
@@ -161,7 +167,7 @@ func getMaxCallsPerSecond() int { // todo: this should be in isbndb package and 
 
 func tickGoroutine(ticker <-chan time.Time, limiter chan struct{}) {
 	for {
-		emptyChannel(limiter) // empty channel in case not all calls were made last second
+		emptyChannel(limiter) // empty channel to make sure there are no leftovers from last second
 		maxCallsPerSecond := getMaxCallsPerSecond()
 		for range maxCallsPerSecond {
 			limiter <- struct{}{}
