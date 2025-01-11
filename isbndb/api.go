@@ -82,7 +82,7 @@ func call[T response](method string, url string, data url.Values, responseStruct
 		}
 	}(response.Body)
 
-	if response.StatusCode != http.StatusOK {
+	if response.StatusCode != http.StatusOK && response.StatusCode != http.StatusNotFound {
 		log.Fatal(response.Status)
 	}
 
