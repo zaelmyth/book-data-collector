@@ -13,7 +13,7 @@ import (
 	"time"
 )
 
-const apiTimeout = 30
+const apiTimeout = 300
 const apiUrlBasic = "https://api2.isbndb.com"
 const apiUrlPremium = "https://api.premium.isbndb.com"
 const apiUrlPro = "https://api.pro.isbndb.com"
