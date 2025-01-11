@@ -17,6 +17,47 @@ const apiTimeout = 30
 const apiUrlBasic = "https://api2.isbndb.com"
 const apiUrlPremium = "https://api.premium.isbndb.com"
 const apiUrlPro = "https://api.pro.isbndb.com"
+const maxCallsPerSecondBasic = 1
+const maxCallsPerSecondPremium = 3
+const maxCallsPerSecondPro = 5
+
+type SubscriptionParams struct {
+	Type              string
+	ApiUrl            string
+	MaxCallsPerSecond int
+	// todo: add and implement MaxCallsPerDay
+}
+
+func GetSubscriptionParams() SubscriptionParams {
+	validSubscriptionTypes := []string{"basic", "premium", "pro"}
+	subscriptionType := os.Getenv("ISBNDB_SUBSCRIPTION_TYPE")
+
+	if !slices.Contains(validSubscriptionTypes, subscriptionType) {
+		log.Fatal("Not set or invalid ISBNDB_SUBSCRIPTION_TYPE")
+	}
+
+	if subscriptionType == "basic" {
+		return SubscriptionParams{
+			Type:              subscriptionType,
+			ApiUrl:            apiUrlBasic,
+			MaxCallsPerSecond: maxCallsPerSecondBasic,
+		}
+	}
+
+	if subscriptionType == "premium" {
+		return SubscriptionParams{
+			Type:              subscriptionType,
+			ApiUrl:            apiUrlPremium,
+			MaxCallsPerSecond: maxCallsPerSecondPremium,
+		}
+	}
+
+	return SubscriptionParams{
+		Type:              subscriptionType,
+		ApiUrl:            apiUrlPro,
+		MaxCallsPerSecond: maxCallsPerSecondPro,
+	}
+}
 
 type response interface {
 	Author | AuthorQueryResults | Book | BookSearchByIsbnResults | BookSearchByQueryResults | Publisher |
@@ -59,7 +100,7 @@ func call[T response](method string, url string, data url.Values, responseStruct
 }
 
 func createRequest(method string, url string, data url.Values) *http.Request {
-	apiUrl := getApiUrl()
+	apiUrl := GetSubscriptionParams().ApiUrl
 
 	isbndbApiKey := os.Getenv("ISBNDB_API_KEY")
 	if isbndbApiKey == "" {
@@ -91,25 +132,6 @@ func createRequest(method string, url string, data url.Values) *http.Request {
 	request.URL.RawQuery = data.Encode()
 
 	return request
-}
-
-func getApiUrl() string {
-	validSubscriptionTypes := []string{"basic", "premium", "pro"}
-	subscriptionType := os.Getenv("ISBNDB_SUBSCRIPTION_TYPE")
-
-	if !slices.Contains(validSubscriptionTypes, subscriptionType) {
-		log.Fatal("Not set or invalid ISBNDB_SUBSCRIPTION_TYPE")
-	}
-
-	if subscriptionType == "basic" {
-		return apiUrlBasic
-	}
-
-	if subscriptionType == "premium" {
-		return apiUrlPremium
-	}
-
-	return apiUrlPro
 }
 
 func getBodyBuffer(data url.Values) *bytes.Buffer {

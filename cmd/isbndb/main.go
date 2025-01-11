@@ -12,7 +12,6 @@ import (
 	"math"
 	"net/http"
 	"os"
-	"slices"
 	"sync"
 	"time"
 
@@ -72,7 +71,7 @@ func saveBookData(ctx context.Context, db *sql.DB, progressDb *sql.DB) {
 
 	totalWords := countWords(countReader)
 	ticker := time.Tick(time.Second)
-	maxCallsPerSecond := getMaxCallsPerSecond()
+	maxCallsPerSecond := isbndb.GetSubscriptionParams().MaxCallsPerSecond
 	limiter := make(chan struct{}, maxCallsPerSecond)
 	booksToSave := make(chan booksSave, 100)
 	var wg sync.WaitGroup
@@ -146,29 +145,10 @@ func countWords(reader io.Reader) int {
 	return totalWords
 }
 
-func getMaxCallsPerSecond() int { // todo: this should be in isbndb package and merged with the other sub info
-	validSubscriptionTypes := []string{"basic", "premium", "pro"}
-	subscriptionType := os.Getenv("ISBNDB_SUBSCRIPTION_TYPE")
-
-	if !slices.Contains(validSubscriptionTypes, subscriptionType) {
-		log.Fatal("Unknown subscription type")
-	}
-
-	if subscriptionType == "basic" {
-		return 1
-	}
-
-	if subscriptionType == "premium" {
-		return 3
-	}
-
-	return 5
-}
-
 func tickGoroutine(ticker <-chan time.Time, limiter chan struct{}) {
 	for {
 		emptyChannel(limiter) // empty channel to make sure there are no leftovers from last second
-		maxCallsPerSecond := getMaxCallsPerSecond()
+		maxCallsPerSecond := isbndb.GetSubscriptionParams().MaxCallsPerSecond
 		for range maxCallsPerSecond {
 			limiter <- struct{}{}
 		}
