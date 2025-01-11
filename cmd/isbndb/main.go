@@ -6,6 +6,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"flag"
 	"fmt"
 	"io"
 	"log"
@@ -22,6 +23,9 @@ import (
 
 func main() {
 	log.SetFlags(log.LstdFlags | log.Llongfile) //add code file name and line number to error messages
+
+	keepProgressFlag := flag.Bool("keep-progress", false, "Boolean flag to keep the progress database. Default is false.")
+	flag.Parse()
 
 	db, err := sql.Open("sqlite", "book-data-isbndb.sqlite?_pragma=journal_mode(WAL)&_pragma=busy_timeout(5000)")
 	if err != nil {
@@ -44,9 +48,11 @@ func main() {
 			log.Fatal(err)
 		}
 
-		err = os.Remove("progress-isbndb.sqlite")
-		if err != nil {
-			log.Fatal(err)
+		if !*keepProgressFlag {
+			err = os.Remove("progress-isbndb.sqlite")
+			if err != nil {
+				log.Fatal(err)
+			}
 		}
 	}(progressDb)
 
