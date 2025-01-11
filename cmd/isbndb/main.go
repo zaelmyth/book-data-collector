@@ -38,14 +38,13 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	defer func() {
-		err := os.Remove("progress-isbndb.sqlite")
+	defer func(db *sql.DB) {
+		err := db.Close()
 		if err != nil {
 			log.Fatal(err)
 		}
-	}()
-	defer func(db *sql.DB) {
-		err := db.Close()
+
+		err = os.Remove("progress-isbndb.sqlite")
 		if err != nil {
 			log.Fatal(err)
 		}
@@ -54,7 +53,8 @@ func main() {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	createTables(ctx, db, progressDb)
+	createProgressTables(ctx, progressDb)
+	createBookTables(ctx, db)
 	saveBookData(ctx, db, progressDb)
 }
 
@@ -66,19 +66,20 @@ type booksSave struct {
 
 func saveBookData(ctx context.Context, db *sql.DB, progressDb *sql.DB) {
 	wordsListBytes := getWordsListBytes()
-	reader := bytes.NewReader(wordsListBytes)
-	countReader := bytes.NewReader(wordsListBytes)
 
+	countReader := bytes.NewReader(wordsListBytes)
 	totalWords := countWords(countReader)
-	ticker := time.Tick(time.Second)
+
 	maxCallsPerSecond := isbndb.GetSubscriptionParams().MaxCallsPerSecond
 	limiter := make(chan struct{}, maxCallsPerSecond)
 	booksToSave := make(chan booksSave, 100)
 	var wg sync.WaitGroup
 
+	ticker := time.Tick(time.Second)
 	go tickGoroutine(ticker, limiter)
 	go saveGoroutine(&wg, booksToSave, ctx, db, progressDb)
 
+	reader := bytes.NewReader(wordsListBytes)
 	scanner := bufio.NewScanner(reader)
 	progressCount := 0
 	for scanner.Scan() {
@@ -89,6 +90,7 @@ func saveBookData(ctx context.Context, db *sql.DB, progressDb *sql.DB) {
 			// added the limiter in the main goroutine instead of search so that it doesn't iterate the whole list of
 			// words too fast and occupy memory unnecessarily
 			<-limiter
+
 			go searchAndSave(&wg, limiter, booksToSave, ctx, db, progressDb, word, 1)
 		}
 
@@ -198,11 +200,10 @@ func searchAndSave(
 ) {
 	wg.Add(1)
 
-	pageSize := 2000 // todo: too high for basic subscription
 	bookSearchResults := isbndb.SearchBooksByQuery(isbndb.BookSearchByQueryRequest{
 		Query:    word,
 		Page:     page,
-		PageSize: pageSize,
+		PageSize: isbndb.MaxPageSize,
 		Column:   "title",
 	})
 
@@ -216,7 +217,7 @@ func searchAndSave(
 		return
 	}
 
-	maxPage := int(math.Ceil(float64(bookSearchResults.Total) / float64(pageSize)))
+	maxPage := int(math.Ceil(float64(bookSearchResults.Total) / float64(isbndb.MaxPageSize)))
 	isSearchComplete := true
 	if maxPage > page {
 		<-limiter

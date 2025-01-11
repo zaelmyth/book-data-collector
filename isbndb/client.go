@@ -8,10 +8,10 @@ import (
 	"strconv"
 )
 
-// the api documentation says that the max page size is 1000, but it actually is limited by the response size
+// MaxPageSize the api documentation says that the max page size is 1000, but it actually is limited by the response size
 // 2000 results per page is safely within the limit
-const isbndbMaxPageSize = 2000 // todo: too high for basic subscription
-const isbndbMaxReturnSize = 10000
+const MaxPageSize = 2000 // todo: too high for basic subscription
+const MaxReturnSize = 10000
 
 func AuthorDetails(name string, page int, pageSize int, language string) Author {
 	validatePagination(page, pageSize)
@@ -50,7 +50,7 @@ func BookDetails(isbn string, withPrices bool) Book {
 }
 
 func SearchBooksByIsbn(isbns []string) BookSearchByIsbnResults {
-	if len(isbns) > isbndbMaxPageSize {
+	if len(isbns) > MaxPageSize {
 		log.Fatal("Number of ISBNs cannot be bigger than 1000")
 	}
 
@@ -204,11 +204,11 @@ func validatePagination(page int, pageSize int) {
 		log.Fatal("Page size cannot be less than 1")
 	}
 
-	if pageSize > isbndbMaxPageSize {
+	if pageSize > MaxPageSize {
 		log.Fatal("Page size cannot be bigger than 1000")
 	}
 
-	if page*pageSize > isbndbMaxReturnSize {
+	if page*pageSize > MaxReturnSize {
 		log.Fatal("Total number of results cannot be bigger than 10000")
 	}
 }

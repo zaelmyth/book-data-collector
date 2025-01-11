@@ -9,13 +9,15 @@ import (
 	"github.com/zaelmyth/book-data-collector/isbndb"
 )
 
-func createTables(ctx context.Context, db *sql.DB, progressDb *sql.DB) {
+func createProgressTables(ctx context.Context, progressDb *sql.DB) {
 	_, err := progressDb.ExecContext(ctx, `CREATE TABLE IF NOT EXISTS searched_words (word TEXT);`)
 	if err != nil {
 		log.Fatal(err)
 	}
+}
 
-	_, err = db.ExecContext(ctx, `CREATE TABLE IF NOT EXISTS books (
+func createBookTables(ctx context.Context, db *sql.DB) {
+	_, err := db.ExecContext(ctx, `CREATE TABLE IF NOT EXISTS books (
 		id INTEGER PRIMARY KEY AUTOINCREMENT,
 		title TEXT,
 		title_long TEXT,
