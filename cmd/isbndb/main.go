@@ -57,6 +57,12 @@ func main() {
 	saveBookData(ctx, db, progressDb)
 }
 
+type booksSave struct {
+	books            []isbndb.Book
+	word             string
+	isSearchComplete bool
+}
+
 func saveBookData(ctx context.Context, db *sql.DB, progressDb *sql.DB) {
 	wordsListBytes := getWordsListBytes()
 	reader := bytes.NewReader(wordsListBytes)
@@ -66,11 +72,11 @@ func saveBookData(ctx context.Context, db *sql.DB, progressDb *sql.DB) {
 	ticker := time.Tick(time.Second)
 	maxCallsPerSecond := getMaxCallsPerSecond()
 	limiter := make(chan struct{}, maxCallsPerSecond)
-	booksToSave := make(chan []isbndb.Book, 100)
+	booksToSave := make(chan booksSave, 100)
 	var wg sync.WaitGroup
 
 	go tickGoroutine(ticker, limiter)
-	go saveGoroutine(&wg, booksToSave, ctx, db)
+	go saveGoroutine(&wg, booksToSave, ctx, db, progressDb)
 
 	scanner := bufio.NewScanner(reader)
 	progressCount := 0
@@ -165,10 +171,17 @@ func tickGoroutine(ticker <-chan time.Time, limiter chan struct{}) {
 	}
 }
 
-func saveGoroutine(wg *sync.WaitGroup, booksToSave chan []isbndb.Book, ctx context.Context, db *sql.DB) {
+func saveGoroutine(wg *sync.WaitGroup, booksToSave chan booksSave, ctx context.Context, db *sql.DB, progressDb *sql.DB) {
 	for {
-		books := <-booksToSave
-		saveBooks(ctx, db, books)
+		booksSave := <-booksToSave
+		saveBooks(ctx, db, booksSave.books)
+
+		if booksSave.isSearchComplete {
+			_, err := progressDb.ExecContext(ctx, `INSERT INTO searched_words (word) VALUES (?)`, booksSave.word)
+			if err != nil {
+				log.Fatal(err)
+			}
+		}
 
 		wg.Done()
 	}
@@ -190,7 +203,7 @@ func isWordSaved(ctx context.Context, progressDb *sql.DB, word string) bool {
 func searchAndSave(
 	wg *sync.WaitGroup,
 	limiter chan struct{},
-	booksToSave chan []isbndb.Book,
+	booksToSave chan booksSave,
 	ctx context.Context,
 	db *sql.DB,
 	progressDb *sql.DB,
@@ -208,23 +221,28 @@ func searchAndSave(
 	})
 
 	if len(bookSearchResults.Books) == 0 {
+		_, err := progressDb.ExecContext(ctx, `INSERT INTO searched_words (word) VALUES (?)`, word)
+		if err != nil {
+			log.Fatal(err)
+		}
+
 		wg.Done()
 		return
 	}
 
 	maxPage := int(math.Ceil(float64(bookSearchResults.Total) / float64(pageSize)))
+	isSearchComplete := true
 	if maxPage > page {
 		<-limiter
 		go searchAndSave(wg, limiter, booksToSave, ctx, db, progressDb, word, page+1)
-	} else {
-		// word should be logged AFTER the results are saved to the database, but I can't be bothered to implement that right now
-		_, err := progressDb.ExecContext(ctx, `INSERT INTO searched_words (word) VALUES (?)`, word)
-		if err != nil {
-			return
-		}
+		isSearchComplete = false
 	}
 
-	booksToSave <- bookSearchResults.Books
+	booksToSave <- booksSave{
+		books:            bookSearchResults.Books,
+		word:             word,
+		isSearchComplete: isSearchComplete,
+	}
 }
 
 func emptyChannel(channel chan struct{}) {
