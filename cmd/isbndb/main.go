@@ -72,17 +72,19 @@ type booksSave struct {
 
 func saveBookData(ctx context.Context, db *sql.DB, progressDb *sql.DB) {
 	wordsListBytes := getWordsListBytes()
-
 	countReader := bytes.NewReader(wordsListBytes)
 	totalWords := countWords(countReader)
 
-	maxCallsPerSecond := isbndb.GetSubscriptionParams().MaxCallsPerSecond
-	limiter := make(chan struct{}, maxCallsPerSecond)
-	booksToSave := make(chan booksSave, 100)
+	mainSearchQueries := make(chan isbndb.BookSearchByQueryRequest, 10)
+	defer close(mainSearchQueries)
+	pageSearchQueries := make(chan isbndb.BookSearchByQueryRequest, 100)
+	defer close(pageSearchQueries)
+	booksToSave := make(chan booksSave, 10)
+	defer close(booksToSave)
+
 	var wg sync.WaitGroup
 
-	ticker := time.Tick(time.Second)
-	go tickGoroutine(ticker, limiter)
+	go tickGoroutine(&wg, mainSearchQueries, pageSearchQueries, booksToSave, ctx, progressDb)
 	go saveGoroutine(&wg, booksToSave, ctx, db, progressDb)
 
 	reader := bytes.NewReader(wordsListBytes)
@@ -93,16 +95,17 @@ func saveBookData(ctx context.Context, db *sql.DB, progressDb *sql.DB) {
 
 		isWordSaved := isWordSaved(ctx, progressDb, word)
 		if !isWordSaved {
-			// added the limiter in the main goroutine instead of search so that it doesn't iterate the whole list of
-			// words too fast and occupy memory unnecessarily
-			<-limiter
-
-			go searchAndSave(&wg, limiter, booksToSave, ctx, db, progressDb, word, 1)
+			mainSearchQueries <- isbndb.BookSearchByQueryRequest{
+				Query:    word,
+				Page:     1,
+				PageSize: isbndb.MaxPageSize,
+				Column:   "title",
+			}
 		}
 
 		progressCount++
 		progress := int(float64(progressCount) / float64(totalWords) * 100)
-		fmt.Print("\033[H\033[2J") // clear console
+		//fmt.Print("\033[H\033[2J") // clear console
 		fmt.Printf("Collecting... %v / %v | %v%%\n", progressCount, totalWords, progress)
 	}
 
@@ -153,21 +156,30 @@ func countWords(reader io.Reader) int {
 	return totalWords
 }
 
-func tickGoroutine(ticker <-chan time.Time, limiter chan struct{}) {
-	for {
-		emptyChannel(limiter) // empty channel to make sure there are no leftovers from last second
-		maxCallsPerSecond := isbndb.GetSubscriptionParams().MaxCallsPerSecond
-		for range maxCallsPerSecond {
-			limiter <- struct{}{}
+func tickGoroutine(
+	wg *sync.WaitGroup,
+	mainSearchQueries chan isbndb.BookSearchByQueryRequest,
+	pageSearchQueries chan isbndb.BookSearchByQueryRequest,
+	booksToSave chan booksSave,
+	ctx context.Context,
+	progressDb *sql.DB,
+) {
+	ticker := time.Tick(time.Second)
+	for range ticker {
+		if len(booksToSave) == cap(booksToSave) {
+			continue // give it time to save some books in DB so we don't occupy too much memory unnecessarily
 		}
 
-		<-ticker
+		maxCallsPerSecond := isbndb.GetSubscriptionParams().MaxCallsPerSecond
+		for range maxCallsPerSecond {
+			go searchAndSave(wg, mainSearchQueries, pageSearchQueries, booksToSave, ctx, progressDb)
+		}
 	}
 }
 
 func saveGoroutine(wg *sync.WaitGroup, booksToSave chan booksSave, ctx context.Context, db *sql.DB, progressDb *sql.DB) {
-	for {
-		booksSave := <-booksToSave
+	for booksSave := range booksToSave {
+		fmt.Printf("Saving: %v\n", booksSave.word)
 		saveBooks(ctx, db, booksSave.books)
 
 		if booksSave.isSearchComplete {
@@ -177,6 +189,7 @@ func saveGoroutine(wg *sync.WaitGroup, booksToSave chan booksSave, ctx context.C
 			}
 		}
 
+		fmt.Printf("Saved: %v\n", booksSave.word)
 		wg.Done()
 	}
 }
@@ -196,25 +209,32 @@ func isWordSaved(ctx context.Context, progressDb *sql.DB, word string) bool {
 
 func searchAndSave(
 	wg *sync.WaitGroup,
-	limiter chan struct{},
+	mainSearchQueries chan isbndb.BookSearchByQueryRequest,
+	pageSearchQueries chan isbndb.BookSearchByQueryRequest,
 	booksToSave chan booksSave,
 	ctx context.Context,
-	db *sql.DB,
 	progressDb *sql.DB,
-	word string,
-	page int,
 ) {
 	wg.Add(1)
 
-	bookSearchResults := isbndb.SearchBooksByQuery(isbndb.BookSearchByQueryRequest{
-		Query:    word,
-		Page:     page,
-		PageSize: isbndb.MaxPageSize,
-		Column:   "title",
-	})
+	var searchQuery isbndb.BookSearchByQueryRequest
+	var ok bool
+
+	select {
+	case searchQuery, ok = <-pageSearchQueries:
+	default:
+	}
+
+	if !ok {
+		searchQuery = <-mainSearchQueries
+	}
+
+	fmt.Printf("Searching: %v %v\n", searchQuery.Query, searchQuery.Page)
+	bookSearchResults, _ := isbndb.SearchBooksByQuery(searchQuery)
+	fmt.Printf("Finished: %v %v\n", searchQuery.Query, searchQuery.Page)
 
 	if len(bookSearchResults.Books) == 0 {
-		_, err := progressDb.ExecContext(ctx, `INSERT INTO searched_words (word) VALUES (?)`, word)
+		_, err := progressDb.ExecContext(ctx, `INSERT INTO searched_words (word) VALUES (?)`, searchQuery.Query)
 		if err != nil {
 			log.Fatal(err)
 		}
@@ -225,25 +245,15 @@ func searchAndSave(
 
 	maxPage := int(math.Ceil(float64(bookSearchResults.Total) / float64(isbndb.MaxPageSize)))
 	isSearchComplete := true
-	if maxPage > page {
-		<-limiter
-		go searchAndSave(wg, limiter, booksToSave, ctx, db, progressDb, word, page+1)
+	if maxPage > searchQuery.Page {
+		searchQuery.Page = searchQuery.Page + 1
+		pageSearchQueries <- searchQuery
 		isSearchComplete = false
 	}
 
 	booksToSave <- booksSave{
 		books:            bookSearchResults.Books,
-		word:             word,
+		word:             searchQuery.Query,
 		isSearchComplete: isSearchComplete,
-	}
-}
-
-func emptyChannel(channel chan struct{}) {
-	for {
-		select {
-		case <-channel:
-		default:
-			return
-		}
 	}
 }

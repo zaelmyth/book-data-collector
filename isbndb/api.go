@@ -13,7 +13,7 @@ import (
 	"time"
 )
 
-const apiTimeout = 300
+const apiTimeout = 120
 const apiUrlBasic = "https://api2.isbndb.com"
 const apiUrlPremium = "https://api.premium.isbndb.com"
 const apiUrlPro = "https://api.pro.isbndb.com"
@@ -65,7 +65,7 @@ type response interface {
 		struct{ Book Book }
 }
 
-func call[T response](method string, url string, data url.Values, responseStruct T) T {
+func call[T response](method string, url string, data url.Values, responseStruct T) (T, ResponseStatusCode) {
 	httpClient := http.Client{
 		Timeout: apiTimeout * time.Second,
 	}
@@ -82,7 +82,9 @@ func call[T response](method string, url string, data url.Values, responseStruct
 		}
 	}(response.Body)
 
-	if response.StatusCode != http.StatusOK && response.StatusCode != http.StatusNotFound {
+	//validStatusCodes := []int{http.StatusOK, http.StatusNotFound, http.StatusBadRequest}
+	validStatusCodes := []int{http.StatusOK, http.StatusNotFound}
+	if !slices.Contains(validStatusCodes, response.StatusCode) {
 		log.Fatal(response.Status)
 	}
 
@@ -96,7 +98,7 @@ func call[T response](method string, url string, data url.Values, responseStruct
 		log.Fatal(jsonError)
 	}
 
-	return responseStruct
+	return responseStruct, ResponseStatusCode(response.StatusCode)
 }
 
 func createRequest(method string, url string, data url.Values) *http.Request {

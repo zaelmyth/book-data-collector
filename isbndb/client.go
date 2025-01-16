@@ -13,7 +13,7 @@ import (
 const MaxPageSize = 2000 // todo: too high for basic subscription
 const MaxReturnSize = 10000
 
-func AuthorDetails(name string, page int, pageSize int, language string) Author {
+func AuthorDetails(name string, page int, pageSize int, language string) (Author, ResponseStatusCode) {
 	validatePagination(page, pageSize)
 
 	return call("get", "/author/"+name, url.Values{
@@ -23,7 +23,7 @@ func AuthorDetails(name string, page int, pageSize int, language string) Author 
 	}, Author{})
 }
 
-func SearchAuthors(query string, page int, pageSize int) AuthorQueryResults {
+func SearchAuthors(query string, page int, pageSize int) (AuthorQueryResults, ResponseStatusCode) {
 	validatePagination(page, pageSize)
 
 	return call("get", "/authors/"+query, url.Values{
@@ -32,7 +32,7 @@ func SearchAuthors(query string, page int, pageSize int) AuthorQueryResults {
 	}, AuthorQueryResults{})
 }
 
-func BookDetails(isbn string, withPrices bool) Book {
+func BookDetails(isbn string, withPrices bool) (Book, ResponseStatusCode) {
 	if withPrices && os.Getenv("ISBNDB_SUBSCRIPTION_TYPE") != "pro" {
 		log.Fatal("Book details with prices option is only available with the pro subscription")
 	}
@@ -42,14 +42,16 @@ func BookDetails(isbn string, withPrices bool) Book {
 		withPricesQuery = "1"
 	}
 
-	return call("get", "/book/"+isbn, url.Values{
+	response, statusCode := call("get", "/book/"+isbn, url.Values{
 		"with_prices": {withPricesQuery},
 	}, struct {
 		Book Book
-	}{}).Book
+	}{})
+
+	return response.Book, statusCode
 }
 
-func SearchBooksByIsbn(isbns []string) BookSearchByIsbnResults {
+func SearchBooksByIsbn(isbns []string) (BookSearchByIsbnResults, ResponseStatusCode) {
 	if len(isbns) > MaxPageSize {
 		log.Fatal("Number of ISBNs cannot be bigger than 1000")
 	}
@@ -59,7 +61,7 @@ func SearchBooksByIsbn(isbns []string) BookSearchByIsbnResults {
 	}, BookSearchByIsbnResults{})
 }
 
-func SearchBooksByQuery(request BookSearchByQueryRequest) BookSearchByQueryResults {
+func SearchBooksByQuery(request BookSearchByQueryRequest) (BookSearchByQueryResults, ResponseStatusCode) {
 	validatePagination(request.Page, request.PageSize)
 	if !slices.Contains([]string{"", "title", "author", "date_published", "subjects"}, request.Column) {
 		log.Fatal("Invalid column")
@@ -89,7 +91,7 @@ func SearchBooksByQuery(request BookSearchByQueryRequest) BookSearchByQueryResul
 	return call("get", "/books/"+request.Query, data, BookSearchByQueryResults{})
 }
 
-func PublisherDetails(name string, page int, pageSize int, language string) Publisher {
+func PublisherDetails(name string, page int, pageSize int, language string) (Publisher, ResponseStatusCode) {
 	validatePagination(page, pageSize)
 
 	return call("get", "/publisher/"+name, url.Values{
@@ -99,7 +101,7 @@ func PublisherDetails(name string, page int, pageSize int, language string) Publ
 	}, Publisher{})
 }
 
-func SearchPublishers(query string, page int, pageSize int) PublisherQueryResults {
+func SearchPublishers(query string, page int, pageSize int) (PublisherQueryResults, ResponseStatusCode) {
 	validatePagination(page, pageSize)
 
 	return call("get", "/publishers/"+query, url.Values{
@@ -108,7 +110,7 @@ func SearchPublishers(query string, page int, pageSize int) PublisherQueryResult
 	}, PublisherQueryResults{})
 }
 
-func SearchByIndex(request SearchRequest) SearchResultsNames {
+func SearchByIndex(request SearchRequest) (SearchResultsNames, ResponseStatusCode) {
 	validatePagination(request.Page, request.PageSize)
 	if !slices.Contains([]string{"authors", "subjects", "publishers"}, request.Index) {
 		log.Fatal("Invalid index")
@@ -143,7 +145,7 @@ func SearchByIndex(request SearchRequest) SearchResultsNames {
 	return call("get", "/search/"+request.Index, data, SearchResultsNames{})
 }
 
-func SearchByIndexBooks(request SearchRequest) SearchResultsBooks {
+func SearchByIndexBooks(request SearchRequest) (SearchResultsBooks, ResponseStatusCode) {
 	validatePagination(request.Page, request.PageSize)
 	if request.Index != "books" {
 		log.Fatal("Invalid index")
@@ -178,15 +180,15 @@ func SearchByIndexBooks(request SearchRequest) SearchResultsBooks {
 	return call("get", "/search/"+request.Index, data, SearchResultsBooks{})
 }
 
-func GetStats() Stats {
+func GetStats() (Stats, ResponseStatusCode) {
 	return call("get", "/stats", url.Values{}, Stats{})
 }
 
-func SubjectDetails(name string) Subject {
+func SubjectDetails(name string) (Subject, ResponseStatusCode) {
 	return call("get", "/subject/"+name, url.Values{}, Subject{})
 }
 
-func SearchSubjects(query string, page int, pageSize int) SubjectQueryResults {
+func SearchSubjects(query string, page int, pageSize int) (SubjectQueryResults, ResponseStatusCode) {
 	validatePagination(page, pageSize)
 
 	return call("get", "/subjects/"+query, url.Values{

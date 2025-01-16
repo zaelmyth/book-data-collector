@@ -75,6 +75,8 @@ type PublisherQueryResults struct {
 	Publishers []string
 }
 
+type ResponseStatusCode int
+
 type SearchResultsNames struct {
 	Total int
 	Data  []string
