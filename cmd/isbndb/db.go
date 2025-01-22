@@ -9,6 +9,18 @@ import (
 	"github.com/zaelmyth/book-data-collector/isbndb"
 )
 
+func createDatabases(ctx context.Context, db *sql.DB) {
+	_, err := db.ExecContext(ctx, `CREATE DATABASE IF NOT EXISTS book_data_isbndb;`)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	_, err = db.ExecContext(ctx, `CREATE DATABASE IF NOT EXISTS progress_isbndb;`)
+	if err != nil {
+		log.Fatal(err)
+	}
+}
+
 func createProgressTables(ctx context.Context, progressDb *sql.DB) {
 	_, err := progressDb.ExecContext(ctx, `CREATE TABLE IF NOT EXISTS searched_words (word TEXT);`)
 	if err != nil {
@@ -18,7 +30,7 @@ func createProgressTables(ctx context.Context, progressDb *sql.DB) {
 
 func createBookTables(ctx context.Context, db *sql.DB) {
 	_, err := db.ExecContext(ctx, `CREATE TABLE IF NOT EXISTS books (
-		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		id INTEGER PRIMARY KEY AUTO_INCREMENT,
 		title TEXT,
 		title_long TEXT,
 		isbn TEXT,
@@ -42,17 +54,17 @@ func createBookTables(ctx context.Context, db *sql.DB) {
 		log.Fatal(err)
 	}
 
-	_, err = db.ExecContext(ctx, `CREATE TABLE IF NOT EXISTS publishers (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT);`)
+	_, err = db.ExecContext(ctx, `CREATE TABLE IF NOT EXISTS publishers (id INTEGER PRIMARY KEY AUTO_INCREMENT, name TEXT);`)
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	_, err = db.ExecContext(ctx, `CREATE TABLE IF NOT EXISTS languages (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT);`)
+	_, err = db.ExecContext(ctx, `CREATE TABLE IF NOT EXISTS languages (id INTEGER PRIMARY KEY AUTO_INCREMENT, name TEXT);`)
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	_, err = db.ExecContext(ctx, `CREATE TABLE IF NOT EXISTS authors (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT);`)
+	_, err = db.ExecContext(ctx, `CREATE TABLE IF NOT EXISTS authors (id INTEGER PRIMARY KEY AUTO_INCREMENT, name TEXT);`)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -62,7 +74,7 @@ func createBookTables(ctx context.Context, db *sql.DB) {
 		log.Fatal(err)
 	}
 
-	_, err = db.ExecContext(ctx, `CREATE TABLE IF NOT EXISTS subjects (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT);`)
+	_, err = db.ExecContext(ctx, `CREATE TABLE IF NOT EXISTS subjects (id INTEGER PRIMARY KEY AUTO_INCREMENT, name TEXT);`)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -72,12 +84,12 @@ func createBookTables(ctx context.Context, db *sql.DB) {
 		log.Fatal(err)
 	}
 
-	_, err = db.ExecContext(ctx, `CREATE TABLE IF NOT EXISTS reviews (id INTEGER PRIMARY KEY AUTOINCREMENT, text TEXT, book_id INTEGER);`)
+	_, err = db.ExecContext(ctx, `CREATE TABLE IF NOT EXISTS reviews (id INTEGER PRIMARY KEY AUTO_INCREMENT, text TEXT, book_id INTEGER);`)
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	_, err = db.ExecContext(ctx, `CREATE TABLE IF NOT EXISTS other_isbns (id INTEGER PRIMARY KEY AUTOINCREMENT, isbn TEXT, binding TEXT, book_id INTEGER);`)
+	_, err = db.ExecContext(ctx, `CREATE TABLE IF NOT EXISTS other_isbns (id INTEGER PRIMARY KEY AUTO_INCREMENT, isbn TEXT, binding TEXT, book_id INTEGER);`)
 	if err != nil {
 		log.Fatal(err)
 	}

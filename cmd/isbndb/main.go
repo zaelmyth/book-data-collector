@@ -6,7 +6,6 @@ import (
 	"context"
 	"database/sql"
 	"errors"
-	"flag"
 	"fmt"
 	"io"
 	"log"
@@ -16,7 +15,7 @@ import (
 	"sync"
 	"time"
 
-	_ "github.com/glebarez/go-sqlite"
+	_ "github.com/go-sql-driver/mysql"
 	_ "github.com/joho/godotenv/autoload"
 	"github.com/zaelmyth/book-data-collector/isbndb"
 )
@@ -24,10 +23,8 @@ import (
 func main() {
 	log.SetFlags(log.LstdFlags | log.Llongfile) //add code file name and line number to error messages
 
-	keepProgressFlag := flag.Bool("keep-progress", false, "Boolean flag to keep the progress database. Default is false.")
-	flag.Parse()
-
-	db, err := sql.Open("sqlite", "book-data-isbndb.sqlite?_pragma=journal_mode(WAL)&_pragma=busy_timeout(5000)")
+	mysqlConnectionString := getMysqlConnectionString()
+	db, err := sql.Open("mysql", mysqlConnectionString)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -38,7 +35,22 @@ func main() {
 		}
 	}(db)
 
-	progressDb, err := sql.Open("sqlite", "progress-isbndb.sqlite?_pragma=journal_mode(WAL)&_pragma=busy_timeout(5000)")
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	createDatabases(ctx, db)
+
+	dbDatabaseBooks := os.Getenv("DB_DATABASE_BOOKS")
+	dbDatabaseProgress := os.Getenv("DB_DATABASE_PROGRESS")
+	if dbDatabaseBooks == "" {
+		dbDatabaseBooks = "book_data_isbndb"
+	}
+	if dbDatabaseProgress == "" {
+		dbDatabaseProgress = "progress_isbndb"
+	}
+
+	// the database has to be declared in the connection instead of with a "USE" statement because of concurrency issues
+	bookDb, err := sql.Open("mysql", mysqlConnectionString+dbDatabaseBooks)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -47,21 +59,35 @@ func main() {
 		if err != nil {
 			log.Fatal(err)
 		}
+	}(bookDb)
 
-		if !*keepProgressFlag {
-			err = os.Remove("progress-isbndb.sqlite")
-			if err != nil {
-				log.Fatal(err)
-			}
+	progressDb, err := sql.Open("mysql", mysqlConnectionString+dbDatabaseProgress)
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer func(db *sql.DB) {
+		err := db.Close()
+		if err != nil {
+			log.Fatal(err)
 		}
 	}(progressDb)
 
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
 	createProgressTables(ctx, progressDb)
-	createBookTables(ctx, db)
-	saveBookData(ctx, db, progressDb)
+	createBookTables(ctx, bookDb)
+	saveBookData(ctx, bookDb, progressDb)
+}
+
+func getMysqlConnectionString() string {
+	dbHost := os.Getenv("DB_HOST")
+	dbPort := os.Getenv("DB_PORT")
+	dbUsername := os.Getenv("DB_USERNAME")
+	dbPassword := os.Getenv("DB_PASSWORD")
+
+	if dbHost == "" || dbPort == "" || dbUsername == "" || dbPassword == "" {
+		log.Fatal("Database variables are not set")
+	}
+
+	return dbUsername + ":" + dbPassword + "@tcp(" + dbHost + ":" + dbPort + ")/"
 }
 
 type booksSave struct {
@@ -85,7 +111,10 @@ func saveBookData(ctx context.Context, db *sql.DB, progressDb *sql.DB) {
 	var wg sync.WaitGroup
 
 	go tickGoroutine(&wg, mainSearchQueries, pageSearchQueries, booksToSave, ctx, progressDb)
-	go saveGoroutine(&wg, booksToSave, ctx, db, progressDb)
+	dbConcurrentWriteGoroutines := os.Getenv("DB_CONCURRENT_WRITE_GOROUTINES")
+	for range dbConcurrentWriteGoroutines {
+		go saveGoroutine(&wg, booksToSave, ctx, db, progressDb)
+	}
 
 	reader := bytes.NewReader(wordsListBytes)
 	scanner := bufio.NewScanner(reader)
@@ -105,7 +134,7 @@ func saveBookData(ctx context.Context, db *sql.DB, progressDb *sql.DB) {
 
 		progressCount++
 		progress := int(float64(progressCount) / float64(totalWords) * 100)
-		//fmt.Print("\033[H\033[2J") // clear console
+		fmt.Print("\033[H\033[2J") // clear console
 		fmt.Printf("Collecting... %v / %v | %v%%\n", progressCount, totalWords, progress)
 	}
 
@@ -164,22 +193,23 @@ func tickGoroutine(
 	ctx context.Context,
 	progressDb *sql.DB,
 ) {
+	timeoutLimiter := make(chan struct{}, 100)
+
 	ticker := time.Tick(time.Second)
 	for range ticker {
-		if len(booksToSave) == cap(booksToSave) {
+		if len(timeoutLimiter) > 0 || len(booksToSave) == cap(booksToSave) {
 			continue // give it time to save some books in DB so we don't occupy too much memory unnecessarily
 		}
 
 		maxCallsPerSecond := isbndb.GetSubscriptionParams().MaxCallsPerSecond
 		for range maxCallsPerSecond {
-			go searchAndSave(wg, mainSearchQueries, pageSearchQueries, booksToSave, ctx, progressDb)
+			go searchAndSave(wg, timeoutLimiter, mainSearchQueries, pageSearchQueries, booksToSave, ctx, progressDb)
 		}
 	}
 }
 
 func saveGoroutine(wg *sync.WaitGroup, booksToSave chan booksSave, ctx context.Context, db *sql.DB, progressDb *sql.DB) {
 	for booksSave := range booksToSave {
-		fmt.Printf("Saving: %v\n", booksSave.word)
 		saveBooks(ctx, db, booksSave.books)
 
 		if booksSave.isSearchComplete {
@@ -189,7 +219,6 @@ func saveGoroutine(wg *sync.WaitGroup, booksToSave chan booksSave, ctx context.C
 			}
 		}
 
-		fmt.Printf("Saved: %v\n", booksSave.word)
 		wg.Done()
 	}
 }
@@ -209,6 +238,7 @@ func isWordSaved(ctx context.Context, progressDb *sql.DB, word string) bool {
 
 func searchAndSave(
 	wg *sync.WaitGroup,
+	timeoutLimiter chan struct{},
 	mainSearchQueries chan isbndb.BookSearchByQueryRequest,
 	pageSearchQueries chan isbndb.BookSearchByQueryRequest,
 	booksToSave chan booksSave,
@@ -229,9 +259,20 @@ func searchAndSave(
 		searchQuery = <-mainSearchQueries
 	}
 
-	fmt.Printf("Searching: %v %v\n", searchQuery.Query, searchQuery.Page)
-	bookSearchResults, _ := isbndb.SearchBooksByQuery(searchQuery)
-	fmt.Printf("Finished: %v %v\n", searchQuery.Query, searchQuery.Page)
+	bookSearchResults, responseStatusCode := isbndb.SearchBooksByQuery(searchQuery)
+	if responseStatusCode == http.StatusGatewayTimeout {
+		timeoutLimiter <- struct{}{}
+		time.Sleep(time.Minute)
+
+		bookSearchResults, responseStatusCode = isbndb.SearchBooksByQuery(searchQuery)
+		if responseStatusCode == http.StatusGatewayTimeout {
+			log.Fatal("Request timeout")
+		}
+
+		for len(timeoutLimiter) > 0 {
+			<-timeoutLimiter
+		}
+	}
 
 	if len(bookSearchResults.Books) == 0 {
 		_, err := progressDb.ExecContext(ctx, `INSERT INTO searched_words (word) VALUES (?)`, searchQuery.Query)
