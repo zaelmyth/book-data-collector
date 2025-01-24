@@ -93,33 +93,6 @@ func getMysqlConnectionString() string {
 	return dbUsername + ":" + dbPassword + "@tcp(" + dbHost + ":" + dbPort + ")/"
 }
 
-type booksSave struct {
-	books            []isbndb.Book
-	word             string
-	isSearchComplete bool
-}
-
-type savedData struct {
-	books      map[string]struct{}
-	booksMutex *sync.RWMutex
-}
-
-func (savedData *savedData) addBook(isbn string) {
-	savedData.booksMutex.Lock()
-	defer savedData.booksMutex.Unlock()
-
-	savedData.books[isbn] = struct{}{}
-}
-
-func (savedData *savedData) isBookSaved(isbn string) bool {
-	savedData.booksMutex.RLock()
-	defer savedData.booksMutex.RUnlock()
-
-	_, isSaved := savedData.books[isbn]
-
-	return isSaved
-}
-
 func saveBookData(ctx context.Context, db *sql.DB, progressDb *sql.DB) {
 	wordsListBytes := getWordsListBytes()
 	countReader := bytes.NewReader(wordsListBytes)
@@ -146,8 +119,16 @@ func saveBookData(ctx context.Context, db *sql.DB, progressDb *sql.DB) {
 	go tickGoroutine(&wg, mainSearchQueries, pageSearchQueries, booksToSave, ctx, progressDb)
 
 	savedData := savedData{
-		books:      getSavedIsbns(ctx, db),
-		booksMutex: &sync.RWMutex{},
+		books:           getSavedIsbns(ctx, db),
+		booksMutex:      &sync.RWMutex{},
+		authors:         getSavedData(ctx, db, "authors"),
+		authorsMutex:    &sync.RWMutex{},
+		subjects:        getSavedData(ctx, db, "subjects"),
+		subjectsMutex:   &sync.RWMutex{},
+		publishers:      getSavedData(ctx, db, "publishers"),
+		publishersMutex: &sync.RWMutex{},
+		languages:       getSavedData(ctx, db, "languages"),
+		languagesMutex:  &sync.RWMutex{},
 	}
 
 	for range dbConcurrentWriteGoroutinesInt {

@@ -3,8 +3,8 @@ package main
 import (
 	"context"
 	"database/sql"
-	"errors"
 	"log"
+	"slices"
 
 	"github.com/zaelmyth/book-data-collector/isbndb"
 )
@@ -122,25 +122,68 @@ func getSavedIsbns(ctx context.Context, db *sql.DB) map[string]struct{} {
 	return savedIsbns
 }
 
+func getSavedData(ctx context.Context, db *sql.DB, dataType string) map[string]int {
+	validDataTypes := []string{"authors", "subjects", "publishers", "languages"}
+	if !slices.Contains(validDataTypes, dataType) {
+		log.Fatal("Invalid data type")
+	}
+
+	rows, err := db.QueryContext(ctx, `SELECT id, name FROM `+dataType)
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer func(rows *sql.Rows) {
+		err := rows.Close()
+		if err != nil {
+			log.Fatal(err)
+		}
+	}(rows)
+
+	savedData := make(map[string]int)
+	for rows.Next() {
+		var id int
+		var name string
+		err := rows.Scan(&id, &name)
+		if err != nil {
+			log.Fatal(err)
+		}
+
+		savedData[name] = id
+	}
+
+	return savedData
+}
+
 func saveBooks(ctx context.Context, db *sql.DB, books []isbndb.Book, savedData savedData) {
 	for _, book := range books {
 		saveBook(ctx, db, book, savedData)
 	}
 }
 
-func saveBook(ctx context.Context, db *sql.DB, book isbndb.Book, savedData savedData) { // unreadable memory bug???
-	publisherId := getIdOrInsert(ctx, db, "publishers", book.Publisher)
-	languageId := getIdOrInsert(ctx, db, "languages", book.Language)
-
+func saveBook(ctx context.Context, db *sql.DB, book isbndb.Book, savedData savedData) {
 	if savedData.isBookSaved(book.Isbn13) {
 		return
+	}
+
+	publisherId, isSaved := savedData.getPublisherId(book.Publisher)
+	if !isSaved {
+		publisherId = insert(ctx, db, "publishers", book.Publisher)
+	}
+
+	languageId, isSaved := savedData.getLanguageId(book.Language)
+	if !isSaved {
+		languageId = insert(ctx, db, "languages", book.Language)
 	}
 
 	savedData.addBook(book.Isbn13)
 	bookId := insertBook(ctx, db, book, publisherId, languageId)
 
 	for _, author := range book.Authors {
-		authorId := getIdOrInsert(ctx, db, "authors", author)
+		authorId, isSaved := savedData.getAuthorId(author)
+		if !isSaved {
+			authorId = insert(ctx, db, "authors", author)
+		}
+
 		_, err := db.ExecContext(ctx, `INSERT INTO author_book (author_id, book_id) VALUES (?, ?)`, authorId, bookId)
 		if err != nil {
 			log.Fatal(err)
@@ -148,7 +191,11 @@ func saveBook(ctx context.Context, db *sql.DB, book isbndb.Book, savedData saved
 	}
 
 	for _, subject := range book.Subjects {
-		subjectId := getIdOrInsert(ctx, db, "subjects", subject)
+		subjectId, isSaved := savedData.getSubjectId(subject)
+		if !isSaved {
+			subjectId = insert(ctx, db, "subjects", subject)
+		}
+
 		_, err := db.ExecContext(ctx, `INSERT INTO book_subject (book_id, subject_id) VALUES (?, ?)`, bookId, subjectId)
 		if err != nil {
 			log.Fatal(err)
@@ -170,22 +217,19 @@ func saveBook(ctx context.Context, db *sql.DB, book isbndb.Book, savedData saved
 	}
 }
 
-func getIdOrInsert(ctx context.Context, db *sql.DB, tableName string, name string) int {
-	var id int64
-	err := db.QueryRowContext(ctx, `SELECT id FROM `+tableName+` WHERE name = ?`, name).Scan(&id)
+func insert(ctx context.Context, db *sql.DB, tableName string, name string) int {
+	validateTableNames := []string{"authors", "subjects", "publishers", "languages"}
+	if !slices.Contains(validateTableNames, tableName) {
+		log.Fatal("Invalid table name")
+	}
 
-	switch {
-	case errors.Is(err, sql.ErrNoRows):
-		result, err := db.ExecContext(ctx, `INSERT INTO `+tableName+` (name) VALUES (?)`, name)
-		if err != nil {
-			log.Fatal(err)
-		}
+	result, err := db.ExecContext(ctx, `INSERT INTO `+tableName+` (name) VALUES (?)`, name)
+	if err != nil {
+		log.Fatal(err)
+	}
 
-		id, err = result.LastInsertId()
-		if err != nil {
-			log.Fatal(err)
-		}
-	case err != nil:
+	id, err := result.LastInsertId()
+	if err != nil {
 		log.Fatal(err)
 	}
 
