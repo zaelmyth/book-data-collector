@@ -55,17 +55,17 @@ func createBookTables(ctx context.Context, db *sql.DB) {
 		log.Fatal(err)
 	}
 
-	_, err = db.ExecContext(ctx, `CREATE TABLE IF NOT EXISTS publishers (id INTEGER PRIMARY KEY AUTO_INCREMENT, name TEXT);`)
+	_, err = db.ExecContext(ctx, `CREATE TABLE IF NOT EXISTS publishers (id INTEGER PRIMARY KEY AUTO_INCREMENT, name VARCHAR(1000), UNIQUE (name));`)
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	_, err = db.ExecContext(ctx, `CREATE TABLE IF NOT EXISTS languages (id INTEGER PRIMARY KEY AUTO_INCREMENT, name TEXT);`)
+	_, err = db.ExecContext(ctx, `CREATE TABLE IF NOT EXISTS languages (id INTEGER PRIMARY KEY AUTO_INCREMENT, name VARCHAR(1000), UNIQUE (name));`)
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	_, err = db.ExecContext(ctx, `CREATE TABLE IF NOT EXISTS authors (id INTEGER PRIMARY KEY AUTO_INCREMENT, name TEXT);`)
+	_, err = db.ExecContext(ctx, `CREATE TABLE IF NOT EXISTS authors (id INTEGER PRIMARY KEY AUTO_INCREMENT, name VARCHAR(1000), UNIQUE (name));`)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -75,7 +75,7 @@ func createBookTables(ctx context.Context, db *sql.DB) {
 		log.Fatal(err)
 	}
 
-	_, err = db.ExecContext(ctx, `CREATE TABLE IF NOT EXISTS subjects (id INTEGER PRIMARY KEY AUTO_INCREMENT, name TEXT);`)
+	_, err = db.ExecContext(ctx, `CREATE TABLE IF NOT EXISTS subjects (id INTEGER PRIMARY KEY AUTO_INCREMENT, name VARCHAR(1000), UNIQUE (name));`)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -168,11 +168,13 @@ func saveBook(ctx context.Context, db *sql.DB, book isbndb.Book, savedData saved
 	publisherId, isSaved := savedData.getPublisherId(book.Publisher)
 	if !isSaved {
 		publisherId = insert(ctx, db, "publishers", book.Publisher)
+		savedData.addPublisher(publisherId, book.Publisher)
 	}
 
 	languageId, isSaved := savedData.getLanguageId(book.Language)
 	if !isSaved {
 		languageId = insert(ctx, db, "languages", book.Language)
+		savedData.addLanguage(languageId, book.Language)
 	}
 
 	savedData.addBook(book.Isbn13)
@@ -182,6 +184,7 @@ func saveBook(ctx context.Context, db *sql.DB, book isbndb.Book, savedData saved
 		authorId, isSaved := savedData.getAuthorId(author)
 		if !isSaved {
 			authorId = insert(ctx, db, "authors", author)
+			savedData.addAuthor(authorId, author)
 		}
 
 		_, err := db.ExecContext(ctx, `INSERT INTO author_book (author_id, book_id) VALUES (?, ?)`, authorId, bookId)
@@ -194,6 +197,7 @@ func saveBook(ctx context.Context, db *sql.DB, book isbndb.Book, savedData saved
 		subjectId, isSaved := savedData.getSubjectId(subject)
 		if !isSaved {
 			subjectId = insert(ctx, db, "subjects", subject)
+			savedData.addSubject(subjectId, subject)
 		}
 
 		_, err := db.ExecContext(ctx, `INSERT INTO book_subject (book_id, subject_id) VALUES (?, ?)`, bookId, subjectId)
