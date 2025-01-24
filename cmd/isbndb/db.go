@@ -9,13 +9,13 @@ import (
 	"github.com/zaelmyth/book-data-collector/isbndb"
 )
 
-func createDatabases(ctx context.Context, db *sql.DB) {
-	_, err := db.ExecContext(ctx, `CREATE DATABASE IF NOT EXISTS book_data_isbndb;`)
+func createDatabases(ctx context.Context, db *sql.DB, booksDbName string, progressDbName string) {
+	_, err := db.ExecContext(ctx, `CREATE DATABASE IF NOT EXISTS `+booksDbName+`;`)
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	_, err = db.ExecContext(ctx, `CREATE DATABASE IF NOT EXISTS progress_isbndb;`)
+	_, err = db.ExecContext(ctx, `CREATE DATABASE IF NOT EXISTS `+progressDbName+`;`)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -34,7 +34,7 @@ func createBookTables(ctx context.Context, db *sql.DB) {
 		title TEXT,
 		title_long TEXT,
 		isbn TEXT,
-		isbn13 TEXT,
+		isbn13 VARCHAR(100),
 		dewey_decimal TEXT,
 		binding TEXT,
 		publisher_id INTEGER,
@@ -48,7 +48,8 @@ func createBookTables(ctx context.Context, db *sql.DB) {
 		msrp TEXT,
 		excerpt TEXT,
 		synopsis TEXT,
-		related_type TEXT
+		related_type TEXT,
+		UNIQUE (isbn13)
 	);`)
 	if err != nil {
 		log.Fatal(err)
@@ -95,27 +96,48 @@ func createBookTables(ctx context.Context, db *sql.DB) {
 	}
 }
 
-func saveBooks(ctx context.Context, db *sql.DB, books []isbndb.Book) {
+func getSavedIsbns(ctx context.Context, db *sql.DB) map[string]struct{} {
+	rows, err := db.QueryContext(ctx, `SELECT isbn13 FROM books`)
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer func(rows *sql.Rows) {
+		err := rows.Close()
+		if err != nil {
+			log.Fatal(err)
+		}
+	}(rows)
+
+	savedIsbns := make(map[string]struct{})
+	for rows.Next() {
+		var isbn string
+		err := rows.Scan(&isbn)
+		if err != nil {
+			log.Fatal(err)
+		}
+
+		savedIsbns[isbn] = struct{}{}
+	}
+
+	return savedIsbns
+}
+
+func saveBooks(ctx context.Context, db *sql.DB, books []isbndb.Book, savedData savedData) {
 	for _, book := range books {
-		saveBook(ctx, db, book)
+		saveBook(ctx, db, book, savedData)
 	}
 }
 
-func saveBook(ctx context.Context, db *sql.DB, book isbndb.Book) {
+func saveBook(ctx context.Context, db *sql.DB, book isbndb.Book, savedData savedData) { // unreadable memory bug???
 	publisherId := getIdOrInsert(ctx, db, "publishers", book.Publisher)
 	languageId := getIdOrInsert(ctx, db, "languages", book.Language)
 
-	var bookId int
-	err := db.QueryRowContext(ctx, `SELECT id FROM books WHERE isbn13 = ?`, book.Isbn13).Scan(&bookId)
-	if bookId != 0 {
+	if savedData.isBookSaved(book.Isbn13) {
 		return
 	}
 
-	if errors.Is(err, sql.ErrNoRows) {
-		bookId = insertBook(ctx, db, book, publisherId, languageId)
-	} else if err != nil {
-		log.Fatal(err)
-	}
+	savedData.addBook(book.Isbn13)
+	bookId := insertBook(ctx, db, book, publisherId, languageId)
 
 	for _, author := range book.Authors {
 		authorId := getIdOrInsert(ctx, db, "authors", author)

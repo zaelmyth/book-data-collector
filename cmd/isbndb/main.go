@@ -12,6 +12,7 @@ import (
 	"math"
 	"net/http"
 	"os"
+	"strconv"
 	"sync"
 	"time"
 
@@ -38,19 +39,19 @@ func main() {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	createDatabases(ctx, db)
+	dbNameBooks := os.Getenv("DB_NAME_BOOKS")
+	dbNameProgress := os.Getenv("DB_NAME_PROGRESS")
+	if dbNameBooks == "" {
+		dbNameBooks = "book_data_isbndb"
+	}
+	if dbNameProgress == "" {
+		dbNameProgress = "progress_isbndb"
+	}
 
-	dbDatabaseBooks := os.Getenv("DB_DATABASE_BOOKS")
-	dbDatabaseProgress := os.Getenv("DB_DATABASE_PROGRESS")
-	if dbDatabaseBooks == "" {
-		dbDatabaseBooks = "book_data_isbndb"
-	}
-	if dbDatabaseProgress == "" {
-		dbDatabaseProgress = "progress_isbndb"
-	}
+	createDatabases(ctx, db, dbNameBooks, dbNameProgress)
 
 	// the database has to be declared in the connection instead of with a "USE" statement because of concurrency issues
-	bookDb, err := sql.Open("mysql", mysqlConnectionString+dbDatabaseBooks)
+	bookDb, err := sql.Open("mysql", mysqlConnectionString+dbNameBooks)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -61,7 +62,7 @@ func main() {
 		}
 	}(bookDb)
 
-	progressDb, err := sql.Open("mysql", mysqlConnectionString+dbDatabaseProgress)
+	progressDb, err := sql.Open("mysql", mysqlConnectionString+dbNameProgress)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -96,6 +97,27 @@ type booksSave struct {
 	isSearchComplete bool
 }
 
+type savedData struct {
+	books      map[string]struct{}
+	booksMutex *sync.RWMutex
+}
+
+func (savedData *savedData) addBook(isbn string) {
+	savedData.booksMutex.Lock()
+	defer savedData.booksMutex.Unlock()
+
+	savedData.books[isbn] = struct{}{}
+}
+
+func (savedData *savedData) isBookSaved(isbn string) bool {
+	savedData.booksMutex.RLock()
+	defer savedData.booksMutex.RUnlock()
+
+	_, isSaved := savedData.books[isbn]
+
+	return isSaved
+}
+
 func saveBookData(ctx context.Context, db *sql.DB, progressDb *sql.DB) {
 	wordsListBytes := getWordsListBytes()
 	countReader := bytes.NewReader(wordsListBytes)
@@ -110,10 +132,24 @@ func saveBookData(ctx context.Context, db *sql.DB, progressDb *sql.DB) {
 
 	var wg sync.WaitGroup
 
-	go tickGoroutine(&wg, mainSearchQueries, pageSearchQueries, booksToSave, ctx, progressDb)
 	dbConcurrentWriteGoroutines := os.Getenv("DB_CONCURRENT_WRITE_GOROUTINES")
-	for range dbConcurrentWriteGoroutines {
-		go saveGoroutine(&wg, booksToSave, ctx, db, progressDb)
+	if dbConcurrentWriteGoroutines == "" {
+		dbConcurrentWriteGoroutines = "1"
+	}
+	dbConcurrentWriteGoroutinesInt, err := strconv.Atoi(dbConcurrentWriteGoroutines)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	go tickGoroutine(&wg, mainSearchQueries, pageSearchQueries, booksToSave, ctx, progressDb)
+
+	savedData := savedData{
+		books:      getSavedIsbns(ctx, db),
+		booksMutex: &sync.RWMutex{},
+	}
+
+	for range dbConcurrentWriteGoroutinesInt {
+		go saveGoroutine(&wg, booksToSave, ctx, db, progressDb, savedData)
 	}
 
 	reader := bytes.NewReader(wordsListBytes)
@@ -138,7 +174,7 @@ func saveBookData(ctx context.Context, db *sql.DB, progressDb *sql.DB) {
 		fmt.Printf("Collecting... %v / %v | %v%%\n", progressCount, totalWords, progress)
 	}
 
-	err := scanner.Err()
+	err = scanner.Err()
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -208,9 +244,16 @@ func tickGoroutine(
 	}
 }
 
-func saveGoroutine(wg *sync.WaitGroup, booksToSave chan booksSave, ctx context.Context, db *sql.DB, progressDb *sql.DB) {
+func saveGoroutine(
+	wg *sync.WaitGroup,
+	booksToSave chan booksSave,
+	ctx context.Context,
+	db *sql.DB,
+	progressDb *sql.DB,
+	savedData savedData,
+) {
 	for booksSave := range booksToSave {
-		saveBooks(ctx, db, booksSave.books)
+		saveBooks(ctx, db, booksSave.books, savedData)
 
 		if booksSave.isSearchComplete {
 			_, err := progressDb.ExecContext(ctx, `INSERT INTO searched_words (word) VALUES (?)`, booksSave.word)
