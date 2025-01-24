@@ -21,6 +21,8 @@ import (
 	"github.com/zaelmyth/book-data-collector/isbndb"
 )
 
+const timeoutMinutes = 2
+
 func main() {
 	log.SetFlags(log.LstdFlags | log.Llongfile) //add code file name and line number to error messages
 
@@ -305,7 +307,7 @@ func searchAndSave(
 	bookSearchResults, responseStatusCode := isbndb.SearchBooksByQuery(searchQuery)
 	if responseStatusCode == http.StatusGatewayTimeout {
 		timeoutLimiter <- struct{}{}
-		time.Sleep(time.Minute)
+		time.Sleep(timeoutMinutes * time.Minute)
 
 		bookSearchResults, responseStatusCode = isbndb.SearchBooksByQuery(searchQuery)
 		if responseStatusCode == http.StatusGatewayTimeout {
