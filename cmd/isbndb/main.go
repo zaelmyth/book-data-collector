@@ -21,7 +21,7 @@ import (
 	"github.com/zaelmyth/book-data-collector/isbndb"
 )
 
-const timeoutMinutes = 2
+const timeoutMinutes = 3
 
 func main() {
 	log.SetFlags(log.LstdFlags | log.Llongfile) //add code file name and line number to error messages

@@ -10,12 +10,12 @@ import (
 )
 
 func createDatabases(ctx context.Context, db *sql.DB, booksDbName string, progressDbName string) {
-	_, err := db.ExecContext(ctx, `CREATE DATABASE IF NOT EXISTS `+booksDbName+`;`)
+	_, err := db.ExecContext(ctx, `CREATE DATABASE IF NOT EXISTS `+booksDbName+` DEFAULT CHARACTER SET = 'utf8mb4' DEFAULT COLLATE 'utf8mb4_0900_as_cs';`)
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	_, err = db.ExecContext(ctx, `CREATE DATABASE IF NOT EXISTS `+progressDbName+`;`)
+	_, err = db.ExecContext(ctx, `CREATE DATABASE IF NOT EXISTS `+progressDbName+` DEFAULT CHARACTER SET = 'utf8mb4' DEFAULT COLLATE 'utf8mb4_0900_as_cs';`)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -55,17 +55,17 @@ func createBookTables(ctx context.Context, db *sql.DB) {
 		log.Fatal(err)
 	}
 
-	_, err = db.ExecContext(ctx, `CREATE TABLE IF NOT EXISTS publishers (id INTEGER PRIMARY KEY AUTO_INCREMENT, name VARCHAR(1000), UNIQUE (name));`)
+	_, err = db.ExecContext(ctx, `CREATE TABLE IF NOT EXISTS publishers (id INTEGER PRIMARY KEY AUTO_INCREMENT, name VARCHAR(500), UNIQUE (name));`)
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	_, err = db.ExecContext(ctx, `CREATE TABLE IF NOT EXISTS languages (id INTEGER PRIMARY KEY AUTO_INCREMENT, name VARCHAR(1000), UNIQUE (name));`)
+	_, err = db.ExecContext(ctx, `CREATE TABLE IF NOT EXISTS languages (id INTEGER PRIMARY KEY AUTO_INCREMENT, name VARCHAR(500), UNIQUE (name));`)
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	_, err = db.ExecContext(ctx, `CREATE TABLE IF NOT EXISTS authors (id INTEGER PRIMARY KEY AUTO_INCREMENT, name VARCHAR(1000), UNIQUE (name));`)
+	_, err = db.ExecContext(ctx, `CREATE TABLE IF NOT EXISTS authors (id INTEGER PRIMARY KEY AUTO_INCREMENT, name VARCHAR(500), UNIQUE (name));`)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -75,7 +75,7 @@ func createBookTables(ctx context.Context, db *sql.DB) {
 		log.Fatal(err)
 	}
 
-	_, err = db.ExecContext(ctx, `CREATE TABLE IF NOT EXISTS subjects (id INTEGER PRIMARY KEY AUTO_INCREMENT, name VARCHAR(1000), UNIQUE (name));`)
+	_, err = db.ExecContext(ctx, `CREATE TABLE IF NOT EXISTS subjects (id INTEGER PRIMARY KEY AUTO_INCREMENT, name VARCHAR(500), UNIQUE (name));`)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -165,27 +165,14 @@ func saveBook(ctx context.Context, db *sql.DB, book isbndb.Book, savedData saved
 		return
 	}
 
-	publisherId, isSaved := savedData.getPublisherId(book.Publisher)
-	if !isSaved {
-		publisherId = insert(ctx, db, "publishers", book.Publisher)
-		savedData.addPublisher(publisherId, book.Publisher)
-	}
-
-	languageId, isSaved := savedData.getLanguageId(book.Language)
-	if !isSaved {
-		languageId = insert(ctx, db, "languages", book.Language)
-		savedData.addLanguage(languageId, book.Language)
-	}
+	publisherId := savedData.savePublisher(ctx, db, book.Publisher)
+	languageId := savedData.saveLanguage(ctx, db, book.Language)
 
 	savedData.addBook(book.Isbn13)
 	bookId := insertBook(ctx, db, book, publisherId, languageId)
 
 	for _, author := range book.Authors {
-		authorId, isSaved := savedData.getAuthorId(author)
-		if !isSaved {
-			authorId = insert(ctx, db, "authors", author)
-			savedData.addAuthor(authorId, author)
-		}
+		authorId := savedData.saveAuthor(ctx, db, author)
 
 		_, err := db.ExecContext(ctx, `INSERT INTO author_book (author_id, book_id) VALUES (?, ?)`, authorId, bookId)
 		if err != nil {
@@ -194,11 +181,7 @@ func saveBook(ctx context.Context, db *sql.DB, book isbndb.Book, savedData saved
 	}
 
 	for _, subject := range book.Subjects {
-		subjectId, isSaved := savedData.getSubjectId(subject)
-		if !isSaved {
-			subjectId = insert(ctx, db, "subjects", subject)
-			savedData.addSubject(subjectId, subject)
-		}
+		subjectId := savedData.saveSubject(ctx, db, subject)
 
 		_, err := db.ExecContext(ctx, `INSERT INTO book_subject (book_id, subject_id) VALUES (?, ?)`, bookId, subjectId)
 		if err != nil {
