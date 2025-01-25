@@ -16,31 +16,29 @@ type booksSave struct {
 
 type savedData struct {
 	books           map[string]struct{}
-	booksMutex      *sync.RWMutex
+	booksMutex      *sync.Mutex
 	authors         map[string]int
-	authorsMutex    *sync.RWMutex
+	authorsMutex    *sync.Mutex
 	subjects        map[string]int
-	subjectsMutex   *sync.RWMutex
+	subjectsMutex   *sync.Mutex
 	publishers      map[string]int
-	publishersMutex *sync.RWMutex
+	publishersMutex *sync.Mutex
 	languages       map[string]int
-	languagesMutex  *sync.RWMutex
+	languagesMutex  *sync.Mutex
 }
 
-func (savedData *savedData) addBook(isbn string) {
+func (savedData *savedData) addBook(isbn string) bool {
 	savedData.booksMutex.Lock()
 	defer savedData.booksMutex.Unlock()
 
-	savedData.books[isbn] = struct{}{}
-}
-
-func (savedData *savedData) isBookSaved(isbn string) bool {
-	savedData.booksMutex.RLock()
-	defer savedData.booksMutex.RUnlock()
-
 	_, isSaved := savedData.books[isbn]
+	if isSaved {
+		return false
+	}
 
-	return isSaved
+	savedData.books[isbn] = struct{}{}
+
+	return true
 }
 
 func (savedData *savedData) saveAuthor(ctx context.Context, db *sql.DB, name string) int {

@@ -5,17 +5,18 @@ import (
 	"database/sql"
 	"log"
 	"slices"
+	"strings"
 
 	"github.com/zaelmyth/book-data-collector/isbndb"
 )
 
 func createDatabases(ctx context.Context, db *sql.DB, booksDbName string, progressDbName string) {
-	_, err := db.ExecContext(ctx, `CREATE DATABASE IF NOT EXISTS `+booksDbName+` DEFAULT CHARACTER SET = 'utf8mb4' DEFAULT COLLATE 'utf8mb4_0900_as_cs';`)
+	_, err := db.ExecContext(ctx, `CREATE DATABASE IF NOT EXISTS `+booksDbName+` DEFAULT CHARACTER SET = 'utf8mb4' DEFAULT COLLATE 'utf8mb4_bin';`)
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	_, err = db.ExecContext(ctx, `CREATE DATABASE IF NOT EXISTS `+progressDbName+` DEFAULT CHARACTER SET = 'utf8mb4' DEFAULT COLLATE 'utf8mb4_0900_as_cs';`)
+	_, err = db.ExecContext(ctx, `CREATE DATABASE IF NOT EXISTS `+progressDbName+` DEFAULT CHARACTER SET = 'utf8mb4' DEFAULT COLLATE 'utf8mb4_bin';`)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -161,18 +162,16 @@ func saveBooks(ctx context.Context, db *sql.DB, books []isbndb.Book, savedData s
 }
 
 func saveBook(ctx context.Context, db *sql.DB, book isbndb.Book, savedData savedData) {
-	if savedData.isBookSaved(book.Isbn13) {
+	if !savedData.addBook(strings.TrimSpace(book.Isbn13)) {
 		return
 	}
 
-	publisherId := savedData.savePublisher(ctx, db, book.Publisher)
-	languageId := savedData.saveLanguage(ctx, db, book.Language)
-
-	savedData.addBook(book.Isbn13)
+	publisherId := savedData.savePublisher(ctx, db, strings.TrimSpace(book.Publisher))
+	languageId := savedData.saveLanguage(ctx, db, strings.TrimSpace(book.Language))
 	bookId := insertBook(ctx, db, book, publisherId, languageId)
 
 	for _, author := range book.Authors {
-		authorId := savedData.saveAuthor(ctx, db, author)
+		authorId := savedData.saveAuthor(ctx, db, strings.TrimSpace(author))
 
 		_, err := db.ExecContext(ctx, `INSERT INTO author_book (author_id, book_id) VALUES (?, ?)`, authorId, bookId)
 		if err != nil {
@@ -181,7 +180,7 @@ func saveBook(ctx context.Context, db *sql.DB, book isbndb.Book, savedData saved
 	}
 
 	for _, subject := range book.Subjects {
-		subjectId := savedData.saveSubject(ctx, db, subject)
+		subjectId := savedData.saveSubject(ctx, db, strings.TrimSpace(subject))
 
 		_, err := db.ExecContext(ctx, `INSERT INTO book_subject (book_id, subject_id) VALUES (?, ?)`, bookId, subjectId)
 		if err != nil {

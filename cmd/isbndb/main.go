@@ -21,7 +21,12 @@ import (
 	"github.com/zaelmyth/book-data-collector/isbndb"
 )
 
-const timeoutMinutes = 3
+// number of minutes to wait before making another request after receiving a timeout error
+const timeoutMinutes = 2
+
+// normally ISBNDB should have a limit of requests per second but for some reason it gives a timeout even if the limit is respected
+// so this constant increases the time interval of those requests
+const tickSeconds = 3
 
 func main() {
 	log.SetFlags(log.LstdFlags | log.Llongfile) //add code file name and line number to error messages
@@ -53,7 +58,7 @@ func main() {
 	createDatabases(ctx, db, dbNameBooks, dbNameProgress)
 
 	// the database has to be declared in the connection instead of with a "USE" statement because of concurrency issues
-	bookDb, err := sql.Open("mysql", mysqlConnectionString+dbNameBooks)
+	bookDb, err := sql.Open("mysql", mysqlConnectionString+dbNameBooks+"?charset=utf8mb4")
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -64,7 +69,7 @@ func main() {
 		}
 	}(bookDb)
 
-	progressDb, err := sql.Open("mysql", mysqlConnectionString+dbNameProgress)
+	progressDb, err := sql.Open("mysql", mysqlConnectionString+dbNameProgress+"?charset=utf8mb4")
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -120,15 +125,15 @@ func saveBookData(ctx context.Context, db *sql.DB, progressDb *sql.DB) {
 
 	savedData := savedData{
 		books:           getSavedIsbns(ctx, db),
-		booksMutex:      &sync.RWMutex{},
+		booksMutex:      &sync.Mutex{},
 		authors:         getSavedData(ctx, db, "authors"),
-		authorsMutex:    &sync.RWMutex{},
+		authorsMutex:    &sync.Mutex{},
 		subjects:        getSavedData(ctx, db, "subjects"),
-		subjectsMutex:   &sync.RWMutex{},
+		subjectsMutex:   &sync.Mutex{},
 		publishers:      getSavedData(ctx, db, "publishers"),
-		publishersMutex: &sync.RWMutex{},
+		publishersMutex: &sync.Mutex{},
 		languages:       getSavedData(ctx, db, "languages"),
-		languagesMutex:  &sync.RWMutex{},
+		languagesMutex:  &sync.Mutex{},
 	}
 
 	for range dbConcurrentWriteGoroutinesInt {
@@ -214,7 +219,7 @@ func tickGoroutine(
 ) {
 	timeoutLimiter := make(chan struct{}, 100)
 
-	ticker := time.Tick(time.Second)
+	ticker := time.Tick(tickSeconds * time.Second)
 	for range ticker {
 		if len(timeoutLimiter) > 0 || len(booksToSave) == cap(booksToSave) {
 			continue // give it time to save some books in DB so we don't occupy too much memory unnecessarily
