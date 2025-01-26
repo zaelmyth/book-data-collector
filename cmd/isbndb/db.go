@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"database/sql"
+	"fmt"
 	"log"
 	"slices"
 	"strings"
@@ -162,16 +163,20 @@ func saveBooks(ctx context.Context, db *sql.DB, books []isbndb.Book, savedData s
 }
 
 func saveBook(ctx context.Context, db *sql.DB, book isbndb.Book, savedData savedData) {
-	if !savedData.addBook(strings.TrimSpace(book.Isbn13)) {
+	isbn13 := fmt.Sprintf("%.*s", 500, strings.TrimSpace(book.Isbn13))
+	if !savedData.addBook(isbn13) {
 		return
 	}
 
-	publisherId := savedData.savePublisher(ctx, db, strings.TrimSpace(book.Publisher))
-	languageId := savedData.saveLanguage(ctx, db, strings.TrimSpace(book.Language))
+	publisher := fmt.Sprintf("%.*s", 500, strings.TrimSpace(book.Publisher))
+	publisherId := savedData.savePublisher(ctx, db, publisher)
+	language := fmt.Sprintf("%.*s", 500, strings.TrimSpace(book.Language))
+	languageId := savedData.saveLanguage(ctx, db, language)
 	bookId := insertBook(ctx, db, book, publisherId, languageId)
 
 	for _, author := range book.Authors {
-		authorId := savedData.saveAuthor(ctx, db, strings.TrimSpace(author))
+		author := fmt.Sprintf("%.*s", 500, strings.TrimSpace(author))
+		authorId := savedData.saveAuthor(ctx, db, author)
 
 		_, err := db.ExecContext(ctx, `INSERT INTO author_book (author_id, book_id) VALUES (?, ?)`, authorId, bookId)
 		if err != nil {
@@ -180,7 +185,8 @@ func saveBook(ctx context.Context, db *sql.DB, book isbndb.Book, savedData saved
 	}
 
 	for _, subject := range book.Subjects {
-		subjectId := savedData.saveSubject(ctx, db, strings.TrimSpace(subject))
+		subject := fmt.Sprintf("%.*s", 500, strings.TrimSpace(subject))
+		subjectId := savedData.saveSubject(ctx, db, subject)
 
 		_, err := db.ExecContext(ctx, `INSERT INTO book_subject (book_id, subject_id) VALUES (?, ?)`, bookId, subjectId)
 		if err != nil {
