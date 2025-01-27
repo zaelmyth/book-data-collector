@@ -29,7 +29,7 @@ type Book struct {
 	DatePublished        string
 	Edition              Edition
 	Pages                int
-	Dimensions           string
+	Dimensions           Dimensions
 	DimensionsStructured struct {
 		Length Measurement
 		Width  Measurement
@@ -118,6 +118,22 @@ func (f *Edition) UnmarshalJSON(data []byte) error {
 	}
 
 	*f = Edition(fmt.Sprint(edition))
+
+	return nil
+}
+
+type Dimensions string
+
+// UnmarshalJSON is overridden because the api response for dimensions can be a string or an array so we have to convert it
+func (f *Dimensions) UnmarshalJSON(data []byte) error {
+	var dimensions interface{}
+
+	err := json.Unmarshal(data, &dimensions)
+	if err != nil {
+		return err
+	}
+
+	*f = Dimensions(fmt.Sprint(dimensions))
 
 	return nil
 }
