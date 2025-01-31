@@ -21,15 +21,8 @@ import (
 	"github.com/zaelmyth/book-data-collector/isbndb"
 )
 
-// number of minutes to wait before making another request after receiving a timeout error
-const timeoutMinutes = 2
-
-// normally ISBNDB should have a limit of requests per second but for some reason it gives a timeout even if the limit is respected
-// so this constant increases the time interval of those requests
-const tickSeconds = 3
-
 func main() {
-	log.SetFlags(log.LstdFlags | log.Llongfile) //add code file name and line number to error messages
+	log.SetFlags(log.LstdFlags | log.Llongfile) // add code file name and line number to error messages
 
 	mysqlConnectionString := getMysqlConnectionString()
 	db, err := sql.Open("mysql", mysqlConnectionString)
@@ -121,7 +114,28 @@ func saveBookData(ctx context.Context, db *sql.DB, progressDb *sql.DB) {
 		log.Fatal(err)
 	}
 
-	go tickGoroutine(&wg, mainSearchQueries, pageSearchQueries, booksToSave, ctx, progressDb)
+	timeout := os.Getenv("ISBNDB_TIMEOUT")
+	if timeout == "" {
+		timeout = "1"
+	}
+	timeoutInt, err := strconv.Atoi(timeout)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	callsPerSecond := os.Getenv("ISBNDB_CALLS_PER_SECOND")
+	if callsPerSecond == "" {
+		callsPerSecond = "0"
+	}
+	callsPerSecondInt, err := strconv.Atoi(callsPerSecond)
+	if err != nil {
+		log.Fatal(err)
+	}
+	if callsPerSecondInt == 0 {
+		callsPerSecondInt = isbndb.GetSubscriptionParams().MaxCallsPerSecond
+	}
+
+	go tickGoroutine(&wg, mainSearchQueries, pageSearchQueries, booksToSave, ctx, progressDb, timeoutInt, callsPerSecondInt)
 
 	savedData := savedData{
 		books:           getSavedIsbns(ctx, db),
@@ -216,18 +230,19 @@ func tickGoroutine(
 	booksToSave chan booksSave,
 	ctx context.Context,
 	progressDb *sql.DB,
+	timeout int,
+	callsPerSecond int,
 ) {
 	timeoutLimiter := make(chan struct{}, 100)
 
-	ticker := time.Tick(tickSeconds * time.Second)
+	ticker := time.Tick(time.Second)
 	for range ticker {
 		if len(timeoutLimiter) > 0 || len(booksToSave) == cap(booksToSave) {
 			continue // give it time to save some books in DB so we don't occupy too much memory unnecessarily
 		}
 
-		maxCallsPerSecond := isbndb.GetSubscriptionParams().MaxCallsPerSecond
-		for range maxCallsPerSecond {
-			go searchAndSave(wg, timeoutLimiter, mainSearchQueries, pageSearchQueries, booksToSave, ctx, progressDb)
+		for range callsPerSecond {
+			go searchAndSave(wg, timeoutLimiter, mainSearchQueries, pageSearchQueries, booksToSave, ctx, progressDb, timeout)
 		}
 	}
 }
@@ -275,6 +290,7 @@ func searchAndSave(
 	booksToSave chan booksSave,
 	ctx context.Context,
 	progressDb *sql.DB,
+	timeout int,
 ) {
 	wg.Add(1)
 
@@ -293,7 +309,7 @@ func searchAndSave(
 	bookSearchResults, responseStatusCode := isbndb.SearchBooksByQuery(searchQuery)
 	if responseStatusCode == http.StatusGatewayTimeout {
 		timeoutLimiter <- struct{}{}
-		time.Sleep(timeoutMinutes * time.Minute)
+		time.Sleep(time.Duration(timeout) * time.Minute)
 
 		bookSearchResults, responseStatusCode = isbndb.SearchBooksByQuery(searchQuery)
 		if responseStatusCode == http.StatusGatewayTimeout {
