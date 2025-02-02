@@ -52,7 +52,7 @@ func BookDetails(isbn string, withPrices bool) (Book, ResponseStatusCode) {
 }
 
 func SearchBooksByIsbn(isbns []string) (BookSearchByIsbnResults, ResponseStatusCode) {
-	if len(isbns) > MaxPageSize {
+	if len(isbns) > 1000 {
 		log.Fatal("Number of ISBNs cannot be bigger than 1000")
 	}
 

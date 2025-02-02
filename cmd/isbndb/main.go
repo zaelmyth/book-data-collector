@@ -6,6 +6,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"flag"
 	"fmt"
 	"io"
 	"log"
@@ -23,6 +24,10 @@ import (
 
 func main() {
 	log.SetFlags(log.LstdFlags | log.Llongfile) // add code file name and line number to error messages
+
+	// todo: words file is in .env but isbn list file is here; apply consistency
+	isbnListFileFlag := flag.String("isbn-file", "", "ISBN list file location")
+	flag.Parse()
 
 	mysqlConnectionString := getMysqlConnectionString()
 	db, err := sql.Open("mysql", mysqlConnectionString)
@@ -75,7 +80,7 @@ func main() {
 
 	createProgressTables(ctx, progressDb)
 	createBookTables(ctx, bookDb)
-	saveBookData(ctx, bookDb, progressDb)
+	saveBookData(*isbnListFileFlag, ctx, bookDb, progressDb)
 }
 
 func getMysqlConnectionString() string {
@@ -91,15 +96,25 @@ func getMysqlConnectionString() string {
 	return dbUsername + ":" + dbPassword + "@tcp(" + dbHost + ":" + dbPort + ")/"
 }
 
-func saveBookData(ctx context.Context, db *sql.DB, progressDb *sql.DB) {
-	wordsListBytes := getWordsListBytes()
-	countReader := bytes.NewReader(wordsListBytes)
-	totalWords := countWords(countReader)
+func saveBookData(isbnListFile string, ctx context.Context, db *sql.DB, progressDb *sql.DB) {
+	var fileBytes []byte
+	var err error
+	if isbnListFile == "" {
+		fileBytes = getWordsListBytes()
+	} else {
+		fileBytes, err = os.ReadFile(isbnListFile)
+		if err != nil {
+			log.Fatal(err)
+		}
+	}
+	countReader := bytes.NewReader(fileBytes)
+	totalLines := countLines(countReader)
 
 	mainSearchQueries := make(chan isbndb.BookSearchByQueryRequest, 10)
 	defer close(mainSearchQueries)
 	pageSearchQueries := make(chan isbndb.BookSearchByQueryRequest, 100)
 	defer close(pageSearchQueries)
+	isbnQueries := make(chan []string, 10)
 	booksToSave := make(chan booksSave, 10)
 	defer close(booksToSave)
 
@@ -135,7 +150,7 @@ func saveBookData(ctx context.Context, db *sql.DB, progressDb *sql.DB) {
 		callsPerSecondInt = isbndb.GetSubscriptionParams().MaxCallsPerSecond
 	}
 
-	go tickGoroutine(&wg, mainSearchQueries, pageSearchQueries, booksToSave, ctx, progressDb, timeoutInt, callsPerSecondInt)
+	go tickGoroutine(&wg, mainSearchQueries, pageSearchQueries, isbnQueries, booksToSave, ctx, progressDb, timeoutInt, callsPerSecondInt)
 
 	savedData := savedData{
 		books:           getSavedIsbns(ctx, db),
@@ -154,8 +169,21 @@ func saveBookData(ctx context.Context, db *sql.DB, progressDb *sql.DB) {
 		go saveGoroutine(&wg, booksToSave, ctx, db, progressDb, savedData)
 	}
 
-	reader := bytes.NewReader(wordsListBytes)
+	reader := bytes.NewReader(fileBytes)
 	scanner := bufio.NewScanner(reader)
+
+	if isbnListFile == "" {
+		handleSearchByKeyword(scanner, ctx, progressDb, mainSearchQueries, totalLines)
+	} else {
+		handleSearchByIsbn(scanner, isbnQueries, totalLines)
+	}
+
+	fmt.Println("Waiting for remaining data to be saved to the database...")
+	wg.Wait()
+	fmt.Println("Done!")
+}
+
+func handleSearchByKeyword(scanner *bufio.Scanner, ctx context.Context, progressDb *sql.DB, mainSearchQueries chan isbndb.BookSearchByQueryRequest, totalWords int) {
 	progressCount := 0
 	for scanner.Scan() {
 		word := scanner.Text()
@@ -176,14 +204,39 @@ func saveBookData(ctx context.Context, db *sql.DB, progressDb *sql.DB) {
 		fmt.Printf("Collecting... %v / %v | %v%%\n", progressCount, totalWords, progress)
 	}
 
-	err = scanner.Err()
+	err := scanner.Err()
 	if err != nil {
 		log.Fatal(err)
 	}
+}
 
-	fmt.Println("Waiting for remaining data to be saved to the database...")
-	wg.Wait()
-	fmt.Println("Done!")
+func handleSearchByIsbn(scanner *bufio.Scanner, isbnQueries chan []string, totalIsbns int) {
+	var isbns []string
+	progressCount := 0
+	for scanner.Scan() {
+		isbn := scanner.Text()
+
+		// todo: check if isbn is not already saved
+		isbns = append(isbns, isbn)
+		if len(isbns) == 1000 {
+			isbnQueries <- isbns
+			isbns = nil
+		}
+
+		progressCount++
+		progress := int(float64(progressCount) / float64(totalIsbns) * 100)
+		fmt.Print("\033[H\033[2J") // clear console
+		fmt.Printf("Collecting... %v / %v | %v%%\n", progressCount, totalIsbns, progress)
+	}
+
+	if len(isbns) > 0 {
+		isbnQueries <- isbns
+	}
+
+	err := scanner.Err()
+	if err != nil {
+		log.Fatal(err)
+	}
 }
 
 func getWordsListBytes() []byte {
@@ -213,20 +266,21 @@ func getWordsListBytes() []byte {
 	return buffer.Bytes()
 }
 
-func countWords(reader io.Reader) int {
-	totalWords := 0
+func countLines(reader io.Reader) int {
+	totalLines := 0
 	scanner := bufio.NewScanner(reader)
 	for scanner.Scan() {
-		totalWords++
+		totalLines++
 	}
 
-	return totalWords
+	return totalLines
 }
 
 func tickGoroutine(
 	wg *sync.WaitGroup,
 	mainSearchQueries chan isbndb.BookSearchByQueryRequest,
 	pageSearchQueries chan isbndb.BookSearchByQueryRequest,
+	isbnQueries chan []string,
 	booksToSave chan booksSave,
 	ctx context.Context,
 	progressDb *sql.DB,
@@ -242,7 +296,11 @@ func tickGoroutine(
 		}
 
 		for range callsPerSecond {
-			go searchAndSave(wg, timeoutLimiter, mainSearchQueries, pageSearchQueries, booksToSave, ctx, progressDb, timeout)
+			if len(isbnQueries) > 0 {
+				go searchAndSaveByIsbn(wg, timeoutLimiter, isbnQueries, booksToSave, timeout)
+			} else {
+				go searchAndSaveByKeyword(wg, timeoutLimiter, mainSearchQueries, pageSearchQueries, booksToSave, ctx, progressDb, timeout)
+			}
 		}
 	}
 }
@@ -282,7 +340,7 @@ func isWordSaved(ctx context.Context, progressDb *sql.DB, word string) bool {
 	return true
 }
 
-func searchAndSave(
+func searchAndSaveByKeyword(
 	wg *sync.WaitGroup,
 	timeoutLimiter chan struct{},
 	mainSearchQueries chan isbndb.BookSearchByQueryRequest,
@@ -292,8 +350,6 @@ func searchAndSave(
 	progressDb *sql.DB,
 	timeout int,
 ) {
-	wg.Add(1)
-
 	var searchQuery isbndb.BookSearchByQueryRequest
 	var ok bool
 
@@ -305,6 +361,8 @@ func searchAndSave(
 	if !ok {
 		searchQuery = <-mainSearchQueries
 	}
+
+	wg.Add(1)
 
 	bookSearchResults, responseStatusCode := isbndb.SearchBooksByQuery(searchQuery)
 	if responseStatusCode == http.StatusGatewayTimeout {
@@ -343,5 +401,38 @@ func searchAndSave(
 		books:            bookSearchResults.Books,
 		word:             searchQuery.Query,
 		isSearchComplete: isSearchComplete,
+	}
+}
+
+func searchAndSaveByIsbn(
+	wg *sync.WaitGroup,
+	timeoutLimiter chan struct{},
+	isbnQueries chan []string,
+	booksToSave chan booksSave,
+	timeout int,
+) {
+	isbns := <-isbnQueries
+
+	wg.Add(1)
+
+	bookSearchResults, responseStatusCode := isbndb.SearchBooksByIsbn(isbns)
+	if responseStatusCode == http.StatusGatewayTimeout {
+		timeoutLimiter <- struct{}{}
+		time.Sleep(time.Duration(timeout) * time.Minute)
+
+		bookSearchResults, responseStatusCode = isbndb.SearchBooksByIsbn(isbns)
+		if responseStatusCode == http.StatusGatewayTimeout {
+			log.Fatal("Request timeout")
+		}
+
+		for len(timeoutLimiter) > 0 {
+			<-timeoutLimiter
+		}
+	}
+
+	booksToSave <- booksSave{
+		books:            bookSearchResults.Data,
+		word:             "",
+		isSearchComplete: false,
 	}
 }

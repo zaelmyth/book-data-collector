@@ -268,7 +268,7 @@ func insertBook(ctx context.Context, db *sql.DB, book isbndb.Book, publisherId i
 		book.Image,
 		book.Msrp,
 		book.Excerpt,
-		fmt.Sprintf("%.*s", 65000, book.Synopsis),
+		fmt.Sprintf("%.*s", 60000, book.Synopsis),
 		book.Related.Type,
 	)
 
