@@ -175,7 +175,7 @@ func saveBookData(isbnListFile string, ctx context.Context, db *sql.DB, progress
 	if isbnListFile == "" {
 		handleSearchByKeyword(scanner, ctx, progressDb, mainSearchQueries, totalLines)
 	} else {
-		handleSearchByIsbn(scanner, isbnQueries, totalLines)
+		handleSearchByIsbn(scanner, isbnQueries, totalLines, savedData)
 	}
 
 	fmt.Println("Waiting for remaining data to be saved to the database...")
@@ -210,17 +210,23 @@ func handleSearchByKeyword(scanner *bufio.Scanner, ctx context.Context, progress
 	}
 }
 
-func handleSearchByIsbn(scanner *bufio.Scanner, isbnQueries chan []string, totalIsbns int) {
+func handleSearchByIsbn(scanner *bufio.Scanner, isbnQueries chan []string, totalIsbns int, savedData savedData) {
 	var isbns []string
 	progressCount := 0
 	for scanner.Scan() {
 		isbn := scanner.Text()
 
-		// todo: check if isbn is not already saved
-		isbns = append(isbns, isbn)
-		if len(isbns) == 1000 {
-			isbnQueries <- isbns
-			isbns = nil
+		savedData.booksMutex.Lock()
+		_, isSaved := savedData.books[isbn]
+		savedData.booksMutex.Unlock()
+
+		// todo: invalid isbns get retried every time so we should probably save what isbns we have already tried
+		if !isSaved {
+			isbns = append(isbns, isbn)
+			if len(isbns) == 1000 {
+				isbnQueries <- isbns
+				isbns = nil
+			}
 		}
 
 		progressCount++
