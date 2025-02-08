@@ -6,14 +6,22 @@ import (
 	"os"
 	"slices"
 	"strconv"
+
+	client "github.com/zaelmyth/book-data-collector/internal"
 )
 
 // MaxPageSize the api documentation says that the max page size is 1000, but it actually is limited by the response size
 // 2000 results per page is safely within the limit
 const MaxPageSize = 2000 // todo: too high for basic subscription
 const MaxReturnSize = 10000
+const apiUrlBasic = "https://api2.isbndb.com"
+const apiUrlPremium = "https://api.premium.isbndb.com"
+const apiUrlPro = "https://api.pro.isbndb.com"
+const maxCallsPerSecondBasic = 1
+const maxCallsPerSecondPremium = 3
+const maxCallsPerSecondPro = 5
 
-func AuthorDetails(name string, page int, pageSize int, language string) (Author, ResponseStatusCode) {
+func AuthorDetails(name string, page int, pageSize int, language string) (Author, int) {
 	validatePagination(page, pageSize)
 
 	return call("get", "/author/"+name, url.Values{
@@ -23,7 +31,7 @@ func AuthorDetails(name string, page int, pageSize int, language string) (Author
 	}, Author{})
 }
 
-func SearchAuthors(query string, page int, pageSize int) (AuthorQueryResults, ResponseStatusCode) {
+func SearchAuthors(query string, page int, pageSize int) (AuthorQueryResults, int) {
 	validatePagination(page, pageSize)
 
 	return call("get", "/authors/"+query, url.Values{
@@ -32,7 +40,7 @@ func SearchAuthors(query string, page int, pageSize int) (AuthorQueryResults, Re
 	}, AuthorQueryResults{})
 }
 
-func BookDetails(isbn string, withPrices bool) (Book, ResponseStatusCode) {
+func BookDetails(isbn string, withPrices bool) (Book, int) {
 	if withPrices && os.Getenv("ISBNDB_SUBSCRIPTION_TYPE") != "pro" {
 		log.Fatal("Book details with prices option is only available with the pro subscription")
 	}
@@ -51,7 +59,7 @@ func BookDetails(isbn string, withPrices bool) (Book, ResponseStatusCode) {
 	return response.Book, statusCode
 }
 
-func SearchBooksByIsbn(isbns []string) (BookSearchByIsbnResults, ResponseStatusCode) {
+func SearchBooksByIsbn(isbns []string) (BookSearchByIsbnResults, int) {
 	if len(isbns) > 1000 {
 		log.Fatal("Number of ISBNs cannot be bigger than 1000")
 	}
@@ -61,7 +69,7 @@ func SearchBooksByIsbn(isbns []string) (BookSearchByIsbnResults, ResponseStatusC
 	}, BookSearchByIsbnResults{})
 }
 
-func SearchBooksByQuery(request BookSearchByQueryRequest) (BookSearchByQueryResults, ResponseStatusCode) {
+func SearchBooksByQuery(request BookSearchByQueryRequest) (BookSearchByQueryResults, int) {
 	validatePagination(request.Page, request.PageSize)
 	if !slices.Contains([]string{"", "title", "author", "date_published", "subjects"}, request.Column) {
 		log.Fatal("Invalid column")
@@ -91,7 +99,7 @@ func SearchBooksByQuery(request BookSearchByQueryRequest) (BookSearchByQueryResu
 	return call("get", "/books/"+request.Query, data, BookSearchByQueryResults{})
 }
 
-func PublisherDetails(name string, page int, pageSize int, language string) (Publisher, ResponseStatusCode) {
+func PublisherDetails(name string, page int, pageSize int, language string) (Publisher, int) {
 	validatePagination(page, pageSize)
 
 	return call("get", "/publisher/"+name, url.Values{
@@ -101,7 +109,7 @@ func PublisherDetails(name string, page int, pageSize int, language string) (Pub
 	}, Publisher{})
 }
 
-func SearchPublishers(query string, page int, pageSize int) (PublisherQueryResults, ResponseStatusCode) {
+func SearchPublishers(query string, page int, pageSize int) (PublisherQueryResults, int) {
 	validatePagination(page, pageSize)
 
 	return call("get", "/publishers/"+query, url.Values{
@@ -110,7 +118,7 @@ func SearchPublishers(query string, page int, pageSize int) (PublisherQueryResul
 	}, PublisherQueryResults{})
 }
 
-func SearchByIndex(request SearchRequest) (SearchResultsNames, ResponseStatusCode) {
+func SearchByIndex(request SearchRequest) (SearchResultsNames, int) {
 	validatePagination(request.Page, request.PageSize)
 	if !slices.Contains([]string{"authors", "subjects", "publishers"}, request.Index) {
 		log.Fatal("Invalid index")
@@ -145,7 +153,7 @@ func SearchByIndex(request SearchRequest) (SearchResultsNames, ResponseStatusCod
 	return call("get", "/search/"+request.Index, data, SearchResultsNames{})
 }
 
-func SearchByIndexBooks(request SearchRequest) (SearchResultsBooks, ResponseStatusCode) {
+func SearchByIndexBooks(request SearchRequest) (SearchResultsBooks, int) {
 	validatePagination(request.Page, request.PageSize)
 	if request.Index != "books" {
 		log.Fatal("Invalid index")
@@ -180,21 +188,70 @@ func SearchByIndexBooks(request SearchRequest) (SearchResultsBooks, ResponseStat
 	return call("get", "/search/"+request.Index, data, SearchResultsBooks{})
 }
 
-func GetStats() (Stats, ResponseStatusCode) {
+func GetStats() (Stats, int) {
 	return call("get", "/stats", url.Values{}, Stats{})
 }
 
-func SubjectDetails(name string) (Subject, ResponseStatusCode) {
+func SubjectDetails(name string) (Subject, int) {
 	return call("get", "/subject/"+name, url.Values{}, Subject{})
 }
 
-func SearchSubjects(query string, page int, pageSize int) (SubjectQueryResults, ResponseStatusCode) {
+func SearchSubjects(query string, page int, pageSize int) (SubjectQueryResults, int) {
 	validatePagination(page, pageSize)
 
 	return call("get", "/subjects/"+query, url.Values{
 		"page":     {strconv.Itoa(page)},
 		"pageSize": {strconv.Itoa(pageSize)},
 	}, SubjectQueryResults{})
+}
+
+type SubscriptionParams struct {
+	Type              string
+	ApiUrl            string
+	MaxCallsPerSecond int
+	// todo: add and implement MaxCallsPerDay
+}
+
+func GetSubscriptionParams() SubscriptionParams {
+	validSubscriptionTypes := []string{"basic", "premium", "pro"}
+	subscriptionType := os.Getenv("ISBNDB_SUBSCRIPTION_TYPE")
+
+	if !slices.Contains(validSubscriptionTypes, subscriptionType) {
+		log.Fatal("Not set or invalid ISBNDB_SUBSCRIPTION_TYPE")
+	}
+
+	if subscriptionType == "basic" {
+		return SubscriptionParams{
+			Type:              subscriptionType,
+			ApiUrl:            apiUrlBasic,
+			MaxCallsPerSecond: maxCallsPerSecondBasic,
+		}
+	}
+
+	if subscriptionType == "premium" {
+		return SubscriptionParams{
+			Type:              subscriptionType,
+			ApiUrl:            apiUrlPremium,
+			MaxCallsPerSecond: maxCallsPerSecondPremium,
+		}
+	}
+
+	return SubscriptionParams{
+		Type:              subscriptionType,
+		ApiUrl:            apiUrlPro,
+		MaxCallsPerSecond: maxCallsPerSecondPro,
+	}
+}
+
+func call[T any](method string, url string, data url.Values, responseStruct T) (T, int) {
+	apiUrl := GetSubscriptionParams().ApiUrl
+
+	isbndbApiKey := os.Getenv("ISBNDB_API_KEY")
+	if isbndbApiKey == "" {
+		log.Fatal("ISBNDB_API_KEY is not set")
+	}
+
+	return client.Call(method, apiUrl+url, data, map[string]string{"Authorization": isbndbApiKey}, responseStruct)
 }
 
 func validatePagination(page int, pageSize int) {
