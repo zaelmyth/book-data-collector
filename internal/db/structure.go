@@ -63,7 +63,7 @@ func CreateBookTables(ctx context.Context, db *sql.DB) {
 		title TEXT,
 		title_long TEXT,
 		isbn TEXT NULL,
-		isbn13 VARCHAR(100) NULL,
+		isbn13 VARCHAR(500) NULL,
 		dewey_decimal TEXT,
 		binding TEXT,
 		publisher_id INTEGER,
@@ -82,8 +82,8 @@ func CreateBookTables(ctx context.Context, db *sql.DB) {
 		subtitle TEXT,
 		average_rating FLOAT,
 		rating_count INTEGER,
-		main_category TEXT,
-		UNIQUE (isbn13)
+		main_category TEXT
+# 		UNIQUE (isbn13)
 	);`)
 	if err != nil {
 		log.Fatal(err)
