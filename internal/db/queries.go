@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"log"
 	"slices"
-	"strconv"
 	"strings"
 
 	"github.com/zaelmyth/book-data-collector/google"
@@ -258,13 +257,19 @@ func insertBook(ctx context.Context, db *sql.DB, book isbndb.Book, publisherId i
 }
 
 func insertVolume(ctx context.Context, db *sql.DB, volume google.Volume, publisherId int, languageId int) int {
-	var isbn10, isbn13 *string
+	var isbn10, isbn13, dimensions *string
+
 	for _, volumeInfo := range volume.VolumeInfo.IndustryIdentifiers {
 		if volumeInfo.Type == "ISBN_10" {
 			isbn10 = &volumeInfo.Identifier
 		} else if volumeInfo.Type == "ISBN_13" {
 			isbn13 = &volumeInfo.Identifier
 		}
+	}
+
+	if volume.VolumeInfo.Dimensions.Height > 0 || volume.VolumeInfo.Dimensions.Width > 0 || volume.VolumeInfo.Dimensions.Thickness > 0 {
+		dimensionsString := fmt.Sprintf("%v x %v x %v", volume.VolumeInfo.Dimensions.Height, volume.VolumeInfo.Dimensions.Width, volume.VolumeInfo.Dimensions.Thickness)
+		dimensions = &dimensionsString
 	}
 
 	result, err := db.ExecContext(ctx, `INSERT INTO books
@@ -299,7 +304,7 @@ func insertVolume(ctx context.Context, db *sql.DB, volume google.Volume, publish
 		volume.VolumeInfo.RatingsCount,
 		languageId,
 		volume.VolumeInfo.MainCategory,
-		strconv.Itoa(volume.VolumeInfo.Dimensions.Height)+"x"+strconv.Itoa(volume.VolumeInfo.Dimensions.Width)+"x"+strconv.Itoa(volume.VolumeInfo.Dimensions.Thickness),
+		dimensions,
 	)
 
 	if err != nil {
