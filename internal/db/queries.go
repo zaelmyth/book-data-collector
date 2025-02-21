@@ -12,8 +12,8 @@ import (
 	"github.com/zaelmyth/book-data-collector/isbndb"
 )
 
-func GetSavedIsbns(ctx context.Context, db *sql.DB) map[string]struct{} {
-	rows, err := db.QueryContext(ctx, `SELECT isbn13 FROM books`)
+func GetSavedData(ctx context.Context, db *sql.DB, tableName string, columnName string) map[string]struct{} {
+	rows, err := db.QueryContext(ctx, `SELECT `+columnName+` FROM `+tableName)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -24,28 +24,23 @@ func GetSavedIsbns(ctx context.Context, db *sql.DB) map[string]struct{} {
 		}
 	}(rows)
 
-	savedIsbns := make(map[string]struct{})
-	var isbn string
+	savedData := make(map[string]struct{})
+	var column string
 
 	for rows.Next() {
-		err := rows.Scan(&isbn)
+		err := rows.Scan(&column)
 		if err != nil {
 			log.Fatal(err)
 		}
 
-		savedIsbns[isbn] = struct{}{}
+		savedData[column] = struct{}{}
 	}
 
-	return savedIsbns
+	return savedData
 }
 
-func GetSavedData(ctx context.Context, db *sql.DB, dataType string) map[string]int {
-	validDataTypes := []string{"authors", "subjects", "publishers", "languages"}
-	if !slices.Contains(validDataTypes, dataType) {
-		log.Fatal("Invalid data type")
-	}
-
-	rows, err := db.QueryContext(ctx, `SELECT id, name FROM `+dataType)
+func GetSavedDataWithId(ctx context.Context, db *sql.DB, tableName string, columnName string) map[string]int {
+	rows, err := db.QueryContext(ctx, `SELECT id, `+columnName+` FROM `+tableName)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -58,45 +53,18 @@ func GetSavedData(ctx context.Context, db *sql.DB, dataType string) map[string]i
 
 	savedData := make(map[string]int)
 	var id int
-	var name string
+	var column string
 
 	for rows.Next() {
-		err := rows.Scan(&id, &name)
+		err := rows.Scan(&id, &column)
 		if err != nil {
 			log.Fatal(err)
 		}
 
-		savedData[name] = id
+		savedData[column] = id
 	}
 
 	return savedData
-}
-
-func GetSavedQueries(ctx context.Context, db *sql.DB) map[string]struct{} {
-	rows, err := db.QueryContext(ctx, `SELECT query FROM searched_queries`)
-	if err != nil {
-		log.Fatal(err)
-	}
-	defer func(rows *sql.Rows) {
-		err := rows.Close()
-		if err != nil {
-			log.Fatal(err)
-		}
-	}(rows)
-
-	savedQueries := make(map[string]struct{})
-	var query string
-
-	for rows.Next() {
-		err := rows.Scan(&query)
-		if err != nil {
-			log.Fatal(err)
-		}
-
-		savedQueries[query] = struct{}{}
-	}
-
-	return savedQueries
 }
 
 func SaveBook(ctx context.Context, db *sql.DB, book isbndb.Book, savedData SavedData) {

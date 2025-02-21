@@ -87,18 +87,23 @@ func saveBookData(config configuration.Config, ctx context.Context, booksDb *sql
 
 	go searchGoroutine(&wg, config, queries, priorityQueries, booksToSave, ctx, progressDb)
 
+	bookColumnId := "isbn13"
+	if config.Provider == "google" {
+		bookColumnId = "google_id"
+	}
+
 	savedData := db.SavedData{
-		Books:           db.GetSavedIsbns(ctx, booksDb),
+		Books:           db.GetSavedData(ctx, booksDb, "books", bookColumnId),
 		BooksMutex:      &sync.RWMutex{},
-		Authors:         db.GetSavedData(ctx, booksDb, "authors"),
+		Authors:         db.GetSavedDataWithId(ctx, booksDb, "authors", "name"),
 		AuthorsMutex:    &sync.Mutex{},
-		Subjects:        db.GetSavedData(ctx, booksDb, "subjects"),
+		Subjects:        db.GetSavedDataWithId(ctx, booksDb, "subjects", "name"),
 		SubjectsMutex:   &sync.Mutex{},
-		Publishers:      db.GetSavedData(ctx, booksDb, "publishers"),
+		Publishers:      db.GetSavedDataWithId(ctx, booksDb, "publishers", "name"),
 		PublishersMutex: &sync.Mutex{},
-		Languages:       db.GetSavedData(ctx, booksDb, "languages"),
+		Languages:       db.GetSavedDataWithId(ctx, booksDb, "languages", "name"),
 		LanguagesMutex:  &sync.Mutex{},
-		Queries:         db.GetSavedQueries(ctx, progressDb),
+		Queries:         db.GetSavedData(ctx, progressDb, "searched_queries", "query"),
 		QueriesMutex:    &sync.RWMutex{},
 	}
 	for range config.DbConcurrentWriteGoroutines {
