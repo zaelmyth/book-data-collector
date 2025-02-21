@@ -124,12 +124,14 @@ func saveBookData(config configuration.Config, ctx context.Context, booksDb *sql
 						isbns: isbns,
 					}
 					isbns = nil
+					wg.Add(1)
 				}
 			} else {
 				queries <- searchQuery{
 					query: query,
 					page:  1,
 				}
+				wg.Add(1)
 			}
 		}
 
@@ -138,6 +140,7 @@ func saveBookData(config configuration.Config, ctx context.Context, booksDb *sql
 				page:  1,
 				isbns: isbns,
 			}
+			wg.Add(1)
 		}
 
 		progressCount++
@@ -217,8 +220,6 @@ func search(
 	if !ok {
 		return
 	}
-
-	wg.Add(1)
 
 	for range searchRetryLimit {
 		if config.Provider == "google" {
