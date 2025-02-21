@@ -29,6 +29,7 @@ type Config struct {
 	DbNameProgress              string
 	DbConcurrentWriteGoroutines int
 	// todo: implement MaxCallsPerDay
+	// todo: move google api url to here
 }
 
 func Get() Config {

@@ -244,6 +244,7 @@ func GetSubscriptionParams() SubscriptionParams {
 }
 
 func call[T any](method string, url string, data url.Values, responseStruct T) (T, int) {
+	// todo: use config
 	apiUrl := GetSubscriptionParams().ApiUrl
 
 	isbndbApiKey := os.Getenv("ISBNDB_API_KEY")
