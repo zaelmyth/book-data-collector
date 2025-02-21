@@ -249,7 +249,7 @@ func search(
 				return
 			}
 
-			isSearchComplete := isSearchComplete(results.TotalItems, google.MaxPageSize, query, priorityQueries)
+			isSearchComplete := isSearchComplete(wg, results.TotalItems, google.MaxPageSize, query, priorityQueries)
 
 			booksToSave <- booksSave{
 				volumes:          results.Items,
@@ -281,7 +281,7 @@ func search(
 				return
 			}
 
-			isSearchComplete := isSearchComplete(results.Total, isbndb.MaxPageSize, query, priorityQueries)
+			isSearchComplete := isSearchComplete(wg, results.Total, isbndb.MaxPageSize, query, priorityQueries)
 
 			booksToSave <- booksSave{
 				books:            results.Books,
@@ -304,7 +304,7 @@ func search(
 			return
 		}
 
-		isSearchComplete := isSearchComplete(results.Total, isbndb.MaxPageSize, query, priorityQueries)
+		isSearchComplete := isSearchComplete(wg, results.Total, isbndb.MaxPageSize, query, priorityQueries)
 
 		booksToSave <- booksSave{
 			books:            results.Data,
@@ -363,13 +363,14 @@ func handleNoResults(wg *sync.WaitGroup, progressDb *sql.DB, ctx context.Context
 	wg.Done()
 }
 
-func isSearchComplete(resultsCount int, maxPageSize int, query searchQuery, priorityQueries chan searchQuery) bool {
+func isSearchComplete(wg *sync.WaitGroup, resultsCount int, maxPageSize int, query searchQuery, priorityQueries chan searchQuery) bool {
 	maxPage := int(math.Ceil(float64(resultsCount) / float64(maxPageSize)))
 	isSearchComplete := query.page == maxPage
 
 	if !isSearchComplete {
 		query.page++
 		priorityQueries <- query
+		wg.Add(1)
 	}
 
 	return isSearchComplete
