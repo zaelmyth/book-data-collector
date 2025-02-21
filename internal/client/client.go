@@ -37,7 +37,7 @@ func Call[T any](method string, url string, data url.Values, headers map[string]
 		}
 	}(response.Body)
 
-	validStatusCodes := []int{http.StatusOK, http.StatusNotFound, http.StatusGatewayTimeout}
+	validStatusCodes := []int{http.StatusOK, http.StatusNotFound, http.StatusGatewayTimeout, http.StatusTooManyRequests}
 	if !slices.Contains(validStatusCodes, response.StatusCode) {
 		log.Fatal(response.Status)
 	}

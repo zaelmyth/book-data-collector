@@ -122,6 +122,7 @@ func saveBookData(config configuration.Config, ctx context.Context, booksDb *sql
 		querySaved := savedData.IsQuerySaved(query)
 		if !querySaved {
 			if config.Provider == "isbndb" && config.SearchBy == "isbn" {
+				// todo: invalid isbns get retried every time so we should probably save what isbns we have already tried
 				isbns = append(isbns, query)
 				if len(isbns) == 1000 {
 					queries <- searchQuery{
@@ -173,7 +174,7 @@ func searchGoroutine(
 	ctx context.Context,
 	progressDb *sql.DB,
 ) {
-	timeoutLimiter := make(chan struct{}, 100)
+	timeoutLimiter := make(chan struct{}, 100) //todo: refactor limiter to a mutex
 	for {
 		if len(timeoutLimiter) == 0 && len(booksToSave) < cap(booksToSave) {
 			for range config.CallsPerSecond {
@@ -239,7 +240,7 @@ func search(
 				Projection: "full",
 			})
 
-			if statusCode == http.StatusGatewayTimeout {
+			if shouldTimeout(statusCode) {
 				handleTimeout(timeoutLimiter, config)
 				continue
 			}
@@ -271,7 +272,7 @@ func search(
 				Column:   config.SearchBy,
 			})
 
-			if statusCode == http.StatusGatewayTimeout {
+			if shouldTimeout(statusCode) {
 				handleTimeout(timeoutLimiter, config)
 				continue
 			}
@@ -294,7 +295,7 @@ func search(
 
 		results, statusCode := isbndb.SearchBooksByIsbn(query.isbns)
 
-		if statusCode == http.StatusGatewayTimeout {
+		if shouldTimeout(statusCode) {
 			handleTimeout(timeoutLimiter, config)
 			continue
 		}
@@ -349,9 +350,16 @@ func getNextQuery(priorityQueries chan searchQuery, queries chan searchQuery) (s
 	return query, ok
 }
 
+func shouldTimeout(statusCode int) bool {
+	return statusCode == http.StatusGatewayTimeout || statusCode == http.StatusTooManyRequests
+}
+
 func handleTimeout(timeoutLimiter chan struct{}, config configuration.Config) {
 	timeoutLimiter <- struct{}{}
 	time.Sleep(time.Duration(config.TimeoutSeconds) * time.Second)
+	for len(timeoutLimiter) > 0 {
+		<-timeoutLimiter
+	}
 }
 
 func handleNoResults(wg *sync.WaitGroup, progressDb *sql.DB, ctx context.Context, query searchQuery) {
