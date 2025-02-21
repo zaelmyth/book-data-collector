@@ -6,10 +6,11 @@ import (
 	"slices"
 	"strconv"
 
-	client "github.com/zaelmyth/book-data-collector/internal"
+	"github.com/zaelmyth/book-data-collector/internal/client"
 )
 
 const apiUrl = "https://www.googleapis.com/books/v1"
+const MaxPageSize = 40
 
 // Search There are special keywords you can specify in the search terms to search in particular fields:
 // https://developers.google.com/books/docs/v1/using#PerformingSearch
@@ -79,7 +80,7 @@ func validateSearchParameters(parameters SearchParameters) {
 		log.Fatal("Invalid start index parameter")
 	}
 
-	if parameters.MaxResults > 40 {
+	if parameters.MaxResults > MaxPageSize {
 		log.Fatal("Invalid max results parameter")
 	}
 

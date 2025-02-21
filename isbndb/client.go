@@ -7,7 +7,7 @@ import (
 	"slices"
 	"strconv"
 
-	client "github.com/zaelmyth/book-data-collector/internal"
+	"github.com/zaelmyth/book-data-collector/internal/client"
 )
 
 // MaxPageSize the api documentation says that the max page size is 1000, but it actually is limited by the response size

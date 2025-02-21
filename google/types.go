@@ -30,7 +30,7 @@ type Volume struct {
 		PrintType           string
 		Categories          []string
 		AverageRating       float64
-		RatingCount         int
+		RatingsCount        int
 		MaturityRating      string
 		AllowAnonLogging    bool
 		ContentVersion      string
@@ -39,6 +39,10 @@ type Volume struct {
 			ContainsImageBubbles bool
 		}
 		ImageLinks struct {
+			ExtraLarge     string
+			Large          string
+			Medium         string
+			Small          string
 			SmallThumbnail string
 			Thumbnail      string
 		}
@@ -58,7 +62,6 @@ type Volume struct {
 			}
 		}
 		SamplePageCount  int
-		RatingsCount     int
 		PrintedPageCount int
 		MainCategory     string
 		Dimensions       struct {
