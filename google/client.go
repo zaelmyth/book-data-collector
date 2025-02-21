@@ -22,7 +22,7 @@ func Search(query string, parameters SearchParameters) (SearchResults, int) {
 	validateSearchParameters(parameters)
 
 	if parameters.MaxResults == 0 {
-		parameters.MaxResults = 40
+		parameters.MaxResults = MaxPageSize
 	}
 
 	requestData := url.Values{
