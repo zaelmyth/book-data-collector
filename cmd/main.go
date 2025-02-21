@@ -250,12 +250,15 @@ func search(
 				return
 			}
 
-			isSearchComplete := isSearchComplete(wg, results.TotalItems, google.MaxPageSize, query, priorityQueries)
+			isComplete := false
+			if config.SearchBy != "isbn" {
+				isComplete = isSearchComplete(wg, results.TotalItems, google.MaxPageSize, query, priorityQueries)
+			}
 
 			booksToSave <- booksSave{
 				volumes:          results.Items,
 				word:             query.query,
-				isSearchComplete: isSearchComplete,
+				isSearchComplete: isComplete,
 			}
 
 			return
@@ -305,12 +308,10 @@ func search(
 			return
 		}
 
-		isSearchComplete := isSearchComplete(wg, results.Total, isbndb.MaxPageSize, query, priorityQueries)
-
 		booksToSave <- booksSave{
 			books:            results.Data,
 			word:             query.query,
-			isSearchComplete: isSearchComplete,
+			isSearchComplete: false,
 		}
 
 		return
