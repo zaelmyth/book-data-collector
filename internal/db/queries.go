@@ -258,13 +258,12 @@ func insertBook(ctx context.Context, db *sql.DB, book isbndb.Book, publisherId i
 }
 
 func insertVolume(ctx context.Context, db *sql.DB, volume google.Volume, publisherId int, languageId int) int {
-	isbn10 := ""
-	isbn13 := ""
+	var isbn10, isbn13 *string
 	for _, volumeInfo := range volume.VolumeInfo.IndustryIdentifiers {
 		if volumeInfo.Type == "ISBN_10" {
-			isbn10 = volumeInfo.Identifier
+			isbn10 = &volumeInfo.Identifier
 		} else if volumeInfo.Type == "ISBN_13" {
-			isbn13 = volumeInfo.Identifier
+			isbn13 = &volumeInfo.Identifier
 		}
 	}
 
