@@ -25,7 +25,7 @@ func GetSavedData(ctx context.Context, db *sql.DB, tableName string, columnName 
 	}(rows)
 
 	savedData := make(map[string]struct{})
-	var column string
+	var column sql.NullString
 
 	for rows.Next() {
 		err := rows.Scan(&column)
@@ -33,7 +33,9 @@ func GetSavedData(ctx context.Context, db *sql.DB, tableName string, columnName 
 			log.Fatal(err)
 		}
 
-		savedData[column] = struct{}{}
+		if column.Valid {
+			savedData[column.String] = struct{}{}
+		}
 	}
 
 	return savedData
