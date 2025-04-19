@@ -55,7 +55,7 @@ func GetSavedDataWithId(ctx context.Context, db *sql.DB, tableName string, colum
 
 	savedData := make(map[string]int)
 	var id int
-	var column string
+	var column sql.NullString
 
 	for rows.Next() {
 		err := rows.Scan(&id, &column)
@@ -63,7 +63,9 @@ func GetSavedDataWithId(ctx context.Context, db *sql.DB, tableName string, colum
 			log.Fatal(err)
 		}
 
-		savedData[column] = id
+		if column.Valid {
+			savedData[column.String] = id
+		}
 	}
 
 	return savedData
@@ -148,6 +150,13 @@ func SaveVolume(ctx context.Context, db *sql.DB, volume google.Volume, savedData
 		if err != nil {
 			log.Fatal(err)
 		}
+	}
+}
+
+func UpdateOpenLibraryIdColumn(ctx context.Context, db *sql.DB, id int, openLibraryId string) {
+	_, err := db.ExecContext(ctx, `UPDATE books SET open_library_id = ? WHERE id = ?`, openLibraryId, id)
+	if err != nil {
+		log.Fatal(err)
 	}
 }
 

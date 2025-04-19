@@ -125,6 +125,13 @@ func CreateBookTables(ctx context.Context, db *sql.DB) {
 	}
 }
 
+func CreateOpenLibraryIdColumn(ctx context.Context, db *sql.DB) {
+	_, err := db.ExecContext(ctx, `ALTER TABLE books ADD open_library_id TEXT;`)
+	if err != nil {
+		log.Fatal(err)
+	}
+}
+
 func getDatabase(config configuration.Config) *sql.DB {
 	mysqlConnectionString := getMysqlConnectionString(config)
 	db, err := sql.Open("mysql", mysqlConnectionString)

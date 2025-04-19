@@ -12,6 +12,8 @@ import (
 )
 
 func main() {
+	log.SetFlags(log.LstdFlags | log.Lshortfile) // add code file name and line number to error messages
+
 	inputFileFlag := flag.String("input", "", "Open Library dump file location")
 	outputFileFlag := flag.String("output", "", "Output file location")
 	flag.Parse()
