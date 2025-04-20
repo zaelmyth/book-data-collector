@@ -139,6 +139,13 @@ func CreateOpenLibraryRatingsTable(ctx context.Context, db *sql.DB) {
 	}
 }
 
+func CreateOpenLibraryReadingLogsTable(ctx context.Context, db *sql.DB) {
+	_, err := db.ExecContext(ctx, `CREATE TABLE IF NOT EXISTS open_library_reading_logs (id INTEGER PRIMARY KEY AUTO_INCREMENT, status TEXT, date DATE, book_id INTEGER);`)
+	if err != nil {
+		log.Fatal(err)
+	}
+}
+
 func getDatabase(config configuration.Config) *sql.DB {
 	mysqlConnectionString := getMysqlConnectionString(config)
 	db, err := sql.Open("mysql", mysqlConnectionString)

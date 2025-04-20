@@ -167,6 +167,13 @@ func SaveOpenLibraryRatings(ctx context.Context, db *sql.DB, rating float64, dat
 	}
 }
 
+func SaveOpenLibraryReadingLogs(ctx context.Context, db *sql.DB, status string, date string, bookId int) {
+	_, err := db.ExecContext(ctx, `INSERT INTO open_library_reading_logs (status, date, book_id) VALUES (?, ?, ?)`, status, date, bookId)
+	if err != nil {
+		log.Fatal(err)
+	}
+}
+
 func insertData(ctx context.Context, db *sql.DB, tableName string, name string) int {
 	validateTableNames := []string{"authors", "subjects", "publishers", "languages"}
 	if !slices.Contains(validateTableNames, tableName) {
