@@ -160,6 +160,13 @@ func UpdateOpenLibraryIdColumn(ctx context.Context, db *sql.DB, id int, openLibr
 	}
 }
 
+func SaveOpenLibraryRatings(ctx context.Context, db *sql.DB, rating float64, date string, bookId int) {
+	_, err := db.ExecContext(ctx, `INSERT INTO open_library_ratings (rating, date, book_id) VALUES (?, ?, ?)`, rating, date, bookId)
+	if err != nil {
+		log.Fatal(err)
+	}
+}
+
 func insertData(ctx context.Context, db *sql.DB, tableName string, name string) int {
 	validateTableNames := []string{"authors", "subjects", "publishers", "languages"}
 	if !slices.Contains(validateTableNames, tableName) {

@@ -5,10 +5,10 @@ import (
 	"compress/gzip"
 	"context"
 	"database/sql"
-	"encoding/json"
 	"fmt"
 	"log"
 	"os"
+	"strconv"
 	"strings"
 
 	_ "github.com/go-sql-driver/mysql"
@@ -22,7 +22,7 @@ func main() {
 
 	config := configuration.Get()
 
-	fmt.Println("Creating open_library_id column...")
+	fmt.Println("Creating open_library_ratings table...")
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -35,9 +35,9 @@ func main() {
 		}
 	}(booksDb)
 
-	db.CreateOpenLibraryIdColumn(ctx, booksDb)
+	db.CreateOpenLibraryRatingsTable(ctx, booksDb)
 
-	fmt.Println("Populating open_library_id column...")
+	fmt.Println("Populating open_library_ratings table...")
 
 	file, err := os.Open(config.File)
 	if err != nil {
@@ -61,8 +61,7 @@ func main() {
 		}
 	}(gzipFile)
 
-	savedIsbn13s := db.GetSavedDataWithId(ctx, booksDb, "books", "isbn13")
-	savedIsbn10s := db.GetSavedDataWithId(ctx, booksDb, "books", "isbn")
+	savedBooks := db.GetSavedDataWithId(ctx, booksDb, "books", "open_library_id")
 
 	scanner := bufio.NewScanner(gzipFile)
 	const maxLineCharacters int = 10000000
@@ -74,33 +73,21 @@ func main() {
 		olLine := strings.Split(scanner.Text(), "\t")
 		olId := strings.TrimPrefix(olLine[1], "/books/")
 
-		type OpenLibraryEdition struct {
-			Isbn13 []string `json:"isbn_13"`
-			Isbn10 []string `json:"isbn_10"`
-		}
-		var openLibraryEdition OpenLibraryEdition
-		err = json.Unmarshal([]byte(olLine[4]), &openLibraryEdition)
-		if err != nil {
-			log.Fatal(err)
+		if olId == "" {
+			continue
 		}
 
-		if len(openLibraryEdition.Isbn13) > 0 {
-			bookId, isSaved := savedIsbn13s[openLibraryEdition.Isbn13[0]]
-			if isSaved {
-				db.UpdateOpenLibraryIdColumn(ctx, booksDb, bookId, olId)
-				continue
+		bookId, isSaved := savedBooks[olId]
+		if isSaved {
+			rating, err := strconv.ParseFloat(olLine[2], 64)
+			if err != nil {
+				log.Fatal(err)
 			}
-		}
-
-		if len(openLibraryEdition.Isbn10) > 0 {
-			bookId, isSaved := savedIsbn10s[openLibraryEdition.Isbn10[0]]
-			if isSaved {
-				db.UpdateOpenLibraryIdColumn(ctx, booksDb, bookId, olId)
-			}
+			db.SaveOpenLibraryRatings(ctx, booksDb, rating, olLine[3], bookId)
 		}
 
 		linesCount++
-		if linesCount%1000000 == 0 {
+		if linesCount%100000 == 0 {
 			fmt.Println(fmt.Sprintf("%v lines processed...", linesCount))
 		}
 	}
