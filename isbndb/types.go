@@ -19,14 +19,14 @@ type AuthorQueryResults struct {
 
 type Book struct {
 	Title                string
-	TitleLong            string
+	TitleLong            string `json:"title_long"`
 	Isbn                 string
 	Isbn13               string
-	DeweyDecimal         string
+	DeweyDecimal         []string `json:"dewey_decimal"`
 	Binding              string
 	Publisher            string
 	Language             string
-	DatePublished        string
+	DatePublished        string `json:"date_published"`
 	Edition              Edition
 	Pages                int
 	Dimensions           Dimensions
@@ -35,7 +35,7 @@ type Book struct {
 		Width  Measurement
 		Height Measurement
 		Weight Measurement
-	}
+	} `json:"dimensions_structured"`
 	Overview string
 	Image    string
 	Msrp     Msrp
@@ -51,7 +51,7 @@ type Book struct {
 	OtherIsbns []struct {
 		Isbn    string
 		Binding string
-	}
+	} `json:"other_isbns"`
 }
 
 type BookSearchByIsbnResults struct {

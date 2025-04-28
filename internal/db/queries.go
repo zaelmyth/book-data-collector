@@ -221,7 +221,7 @@ func insertBook(ctx context.Context, db *sql.DB, book isbndb.Book, publisherId i
 		book.TitleLong,
 		book.Isbn,
 		book.Isbn13,
-		book.DeweyDecimal,
+		strings.Join(book.DeweyDecimal, ", "),
 		book.Binding,
 		publisherId,
 		languageId,
