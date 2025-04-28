@@ -42,6 +42,10 @@ func Call[T any](method string, url string, data url.Values, headers map[string]
 		log.Fatal(response.Status)
 	}
 
+	if response.StatusCode != http.StatusOK {
+		return responseStruct, response.StatusCode
+	}
+
 	body, err := io.ReadAll(response.Body)
 	if err != nil {
 		log.Fatal(err)
